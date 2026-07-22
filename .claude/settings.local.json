@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx --yes create-next-app@latest . --typescript --eslint --app --src-dir=false --import-alias \"@/*\" --no-tailwind --use-npm --turbopack=false)",
+      "Bash(npx --yes create-next-app@latest aparat-app --typescript --eslint --app --src-dir=false --import-alias \"@/*\" --no-tailwind --use-npm --turbopack=false)",
+      "Read(//Users/milosserbus/.npm/_cacache/content-v2/sha512/69/**)",
+      "Bash(rm -rf /private/tmp/claude-501/-Users-milosserbus-Documents-APARAT/af868df6-e23c-4be2-8a18-5e38e357b415/scratchpad/aparat-app)",
+      "Bash(mkdir -p /private/tmp/claude-501/-Users-milosserbus-Documents-APARAT/af868df6-e23c-4be2-8a18-5e38e357b415/scratchpad/npm-cache)",
+      "Bash(npm_config_cache=/private/tmp/claude-501/-Users-milosserbus-Documents-APARAT/af868df6-e23c-4be2-8a18-5e38e357b415/scratchpad/npm-cache npx --yes create-next-app@latest aparat-app --typescript --eslint --app --src-dir=false --import-alias \"@/*\" --no-tailwind --use-npm --turbopack=false)",
+      "Bash(npm_config_cache=/private/tmp/claude-501/-Users-milosserbus-Documents-APARAT/af868df6-e23c-4be2-8a18-5e38e357b415/scratchpad/npm-cache npm install @supabase/supabase-js @supabase/ssr qrcode.react)",
+      "Bash(rm -f /Users/milosserbus/Documents/APARAT/app/page.module.css *)",
+      "Bash(npm run *)",
+      "Bash(lsof -i :3000 -sTCP:LISTEN)",
+      "Bash(gh auth *)",
+      "Bash(git config *)",
+      "Bash(ssh -T git@github.com)",
+      "Bash(brew --version)",
+      "Read(//Users/milosserbus/**)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}
