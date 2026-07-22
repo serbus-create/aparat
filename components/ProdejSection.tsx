@@ -17,9 +17,10 @@ import {
   fetchDoplnkyCeny,
   computeStock,
   estimateDoplnekUnitPrice,
+  netForSale,
   type ProdejFull,
 } from "@/lib/data";
-import { formatKc, parseDigits } from "@/lib/format";
+import { formatKc, formatDate, parseDigits, todayISO } from "@/lib/format";
 import { FEE_BALENE, FEE_POSTOVNE } from "@/lib/invoice";
 import AuthorBadge from "@/components/AuthorBadge";
 import InvoiceModal from "@/components/InvoiceModal";
@@ -49,13 +50,7 @@ interface ProdejEditForm {
   klient_adresa: string;
   polozka: string;
   cena: string;
-}
-
-function netForSale(r: ProdejFull): number {
-  const repairsTotal = r.opravy.reduce((s, x) => s + x.cena, 0);
-  const doplnkyTotal = r.doplnky.reduce((s, x) => s + x.cena, 0);
-  const originalCost = r.nakup?.kolik_stalo ?? 0;
-  return r.cena + doplnkyTotal - repairsTotal - FEE_BALENE - FEE_POSTOVNE - originalCost;
+  datum: string;
 }
 
 export default function ProdejSection({
@@ -84,6 +79,7 @@ export default function ProdejSection({
   const [klientTelefon, setKlientTelefon] = useState("");
   const [klientEmail, setKlientEmail] = useState("");
   const [klientAdresa, setKlientAdresa] = useState("");
+  const [prodejDatum, setProdejDatum] = useState(todayISO());
   const [selectedNakupId, setSelectedNakupId] = useState<string>("");
   const [prodejCena, setProdejCena] = useState("");
   const [repairs, setRepairs] = useState<Repair[]>([]);
@@ -187,6 +183,7 @@ export default function ProdejSection({
         klient_adresa: klientAdresa.trim() || null,
         polozka: selectedNakup.co_koupili,
         cena: price,
+        datum: prodejDatum || null,
         autor_id: profile.id,
         opravy: repairs.map((r) => ({ popis: r.desc, cena: r.price })),
         doplnky: doplnekLines.map((d) => ({ polozka: d.polozka, pocet_ks: d.qty, cena: d.price })),
@@ -195,6 +192,7 @@ export default function ProdejSection({
       setKlientTelefon("");
       setKlientEmail("");
       setKlientAdresa("");
+      setProdejDatum(todayISO());
       setSelectedNakupId("");
       setProdejCena("");
       setRepairs([]);
@@ -221,6 +219,7 @@ export default function ProdejSection({
       klient_adresa: r.klient_adresa || "",
       polozka: r.polozka,
       cena: String(r.cena),
+      datum: r.datum || "",
     });
     setNewOpravaDesc("");
     setNewOpravaPrice("");
@@ -242,6 +241,7 @@ export default function ProdejSection({
         klient_adresa: editForm.klient_adresa.trim() || null,
         polozka: editForm.polozka.trim(),
         cena: parseDigits(editForm.cena),
+        datum: editForm.datum || null,
       });
       setEditingId(null);
       setEditForm(null);
@@ -305,8 +305,8 @@ export default function ProdejSection({
         <div className="form-section-label">
           Prodávaná položka <span>(vybírá se z databáze Nákup — jen &quot;Připraveno k prodeji&quot;)</span>
         </div>
-        <div className="prodej-row cols-2">
-          <div className="field">
+        <div className="prodej-row cols-3">
+          <div className="field" style={{ gridColumn: "span 2" }}>
             <label>Co prodáváme</label>
             <select value={selectedNakupId} onChange={(e) => setSelectedNakupId(e.target.value)}>
               <option value="">— vyberte položku z Nákupu —</option>
@@ -317,6 +317,12 @@ export default function ProdejSection({
               ))}
             </select>
           </div>
+          <div className="field">
+            <label>Datum</label>
+            <input type="date" value={prodejDatum} onChange={(e) => setProdejDatum(e.target.value)} />
+          </div>
+        </div>
+        <div className="prodej-row cols-2" style={{ marginTop: 12 }}>
           <div className="field">
             <label>Za kolik jsme prodali</label>
             <input type="text" value={prodejCena} onChange={(e) => setProdejCena(e.target.value)} placeholder="např. 58000" />
@@ -507,7 +513,7 @@ export default function ProdejSection({
                       <input type="text" value={editForm.klient_adresa} onChange={(e) => setEditForm({ ...editForm, klient_adresa: e.target.value })} />
                     </div>
                   </div>
-                  <div className="prodej-row cols-2" style={{ marginTop: 12 }}>
+                  <div className="prodej-row cols-3" style={{ marginTop: 12 }}>
                     <div className="field">
                       <label>Položka</label>
                       <input type="text" value={editForm.polozka} onChange={(e) => setEditForm({ ...editForm, polozka: e.target.value })} />
@@ -515,6 +521,10 @@ export default function ProdejSection({
                     <div className="field">
                       <label>Za kolik jsme prodali</label>
                       <input type="text" value={editForm.cena} onChange={(e) => setEditForm({ ...editForm, cena: e.target.value })} />
+                    </div>
+                    <div className="field">
+                      <label>Datum</label>
+                      <input type="date" value={editForm.datum} onChange={(e) => setEditForm({ ...editForm, datum: e.target.value })} />
                     </div>
                   </div>
 
@@ -577,7 +587,7 @@ export default function ProdejSection({
                     <div>
                       <div className="sale-name">{r.klient_jmeno}</div>
                       <div className="sale-contact">
-                        {r.klient_adresa || "—"} · {r.klient_telefon || "—"} · {r.klient_email || "—"}
+                        {formatDate(r.datum)} · {r.klient_adresa || "—"} · {r.klient_telefon || "—"} · {r.klient_email || "—"}
                       </div>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>

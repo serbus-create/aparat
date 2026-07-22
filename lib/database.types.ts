@@ -1,4 +1,4 @@
-export type NakupFase = "nakoupeno" | "servisovano" | "pripraveno";
+export type NakupFase = "nakoupeno" | "servisovano" | "pripraveno" | "nefunkcni";
 export type ProdejStav = "pripraveno" | "inzerovano" | "zamluveno" | "prodano" | "storno";
 
 export interface Profile {
@@ -30,6 +30,7 @@ export interface Prodej {
   klient_adresa: string | null;
   polozka: string;
   cena: number;
+  datum: string | null;
   stav: ProdejStav;
   autor_id: string | null;
   invoice_number: string | null;

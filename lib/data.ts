@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { FEE_BALENE, FEE_POSTOVNE } from "@/lib/invoice";
 import type {
   Profile,
   Nakup,
@@ -129,6 +130,13 @@ export interface ProdejFull extends Prodej {
   nakup: Nakup | null;
 }
 
+export function netForSale(r: ProdejFull): number {
+  const repairsTotal = r.opravy.reduce((s, x) => s + x.cena, 0);
+  const doplnkyTotal = r.doplnky.reduce((s, x) => s + x.cena, 0);
+  const originalCost = r.nakup?.kolik_stalo ?? 0;
+  return r.cena + doplnkyTotal - repairsTotal - FEE_BALENE - FEE_POSTOVNE - originalCost;
+}
+
 export async function fetchProdej(): Promise<ProdejFull[]> {
   const [{ data: prodejData, error: prodejErr }, { data: opravyData, error: opravyErr }, { data: doplnkyData, error: doplnkyErr }, { data: nakupData, error: nakupErr }] =
     await Promise.all([
@@ -160,6 +168,7 @@ export interface NewProdejInput {
   klient_adresa: string | null;
   polozka: string;
   cena: number;
+  datum: string | null;
   autor_id: string | null;
   opravy: { popis: string; cena: number }[];
   doplnky: { polozka: string; pocet_ks: number; cena: number }[];
@@ -225,6 +234,7 @@ export async function updateProdej(
     klient_adresa: string | null;
     polozka: string;
     cena: number;
+    datum: string | null;
   }>
 ): Promise<void> {
   const { error } = await supabase.from("prodej").update(fields).eq("id", id);

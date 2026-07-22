@@ -125,7 +125,7 @@ button {
   border: 1px solid var(--gray-3);
   border-radius: 100px;
   overflow: hidden;
-  width: 560px;
+  width: 720px;
   max-width: 100%;
 }
 .lens-option {
@@ -160,7 +160,7 @@ button {
   position: absolute;
   top: 0;
   left: 0;
-  width: 33.333%;
+  width: 25%;
   height: 100%;
   background: var(--red);
   border-radius: 100px;
@@ -172,6 +172,9 @@ button {
 }
 .lens-slider.pos-2 {
   transform: translateX(200%);
+}
+.lens-slider.pos-3 {
+  transform: translateX(300%);
 }
 
 /* ---------------- Sub toggle ---------------- */

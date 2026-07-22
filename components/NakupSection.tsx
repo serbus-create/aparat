@@ -20,6 +20,7 @@ const NAKUP_PHASES: { key: NakupFase; label: string }[] = [
   { key: "nakoupeno", label: "Nakoupeno" },
   { key: "servisovano", label: "Servisováno" },
   { key: "pripraveno", label: "Připraveno k prodeji" },
+  { key: "nefunkcni", label: "Nefunkční" },
 ];
 
 interface Dodavatel {
@@ -364,8 +365,11 @@ export default function NakupSection({
                           <div className="buy-item">{r.co_koupili}</div>
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-                          <div className="amount" style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>
-                            {formatKc(r.kolik_stalo)}
+                          <div
+                            className={`amount ${r.fase === "nefunkcni" ? "profit-neg" : ""}`}
+                            style={{ fontFamily: "var(--mono)", fontWeight: 700 }}
+                          >
+                            {r.fase === "nefunkcni" ? `−${formatKc(r.kolik_stalo)}` : formatKc(r.kolik_stalo)}
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <AuthorBadge authorId={r.autor_id} profiles={profiles} />

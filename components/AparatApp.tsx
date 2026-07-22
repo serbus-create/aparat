@@ -8,10 +8,11 @@ import { initials } from "@/lib/format";
 import NakupSection from "@/components/NakupSection";
 import ProdejSection from "@/components/ProdejSection";
 import DoplnkySection from "@/components/DoplnkySection";
+import PrehledSection from "@/components/PrehledSection";
 
-type Mode = "nakup" | "prodej" | "doplnky";
+type Mode = "nakup" | "prodej" | "doplnky" | "prehled";
 
-const MODE_POS: Record<Mode, number> = { nakup: 0, prodej: 1, doplnky: 2 };
+const MODE_POS: Record<Mode, number> = { nakup: 0, prodej: 1, doplnky: 2, prehled: 3 };
 
 export default function AparatApp({ profile }: { profile: Profile }) {
   const router = useRouter();
@@ -64,6 +65,10 @@ export default function AparatApp({ profile }: { profile: Profile }) {
             Doplňky
             <small>film, baterky, kabely...</small>
           </div>
+          <div className={`lens-option ${mode === "prehled" ? "active" : ""}`} onClick={() => setMode("prehled")}>
+            Přehled
+            <small>zisky a ztráty</small>
+          </div>
         </div>
       </div>
 
@@ -89,6 +94,7 @@ export default function AparatApp({ profile }: { profile: Profile }) {
           />
         )}
         {mode === "doplnky" && <DoplnkySection profile={profile} refreshKey={refreshKey} onMutate={bump} />}
+        {mode === "prehled" && <PrehledSection refreshKey={refreshKey} />}
       </div>
     </>
   );
