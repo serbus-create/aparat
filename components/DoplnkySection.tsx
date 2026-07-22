@@ -8,6 +8,8 @@ import {
   fetchDoplnkyCeny,
   addDoplnkyNakup,
   addDoplnkyProdej,
+  updateDoplnkyNakup,
+  updateDoplnkyProdej,
   setDoplnekCena,
   computeStock,
   fetchProfiles,
@@ -37,6 +39,10 @@ export default function DoplnkySection({
   const [qty, setQty] = useState("");
   const [total, setTotal] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<{ polozka: string; pocet_ks: string; cena_celkem: string } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -82,6 +88,36 @@ export default function DoplnkySection({
     if (value.trim() !== "") {
       await setDoplnekCena(polozka, num);
       onMutate();
+    }
+  }
+
+  function startEdit(r: DoplnkyNakup | DoplnkyProdej) {
+    setEditingId(r.id);
+    setEditForm({ polozka: r.polozka, pocet_ks: String(r.pocet_ks), cena_celkem: String(r.cena_celkem) });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditForm(null);
+  }
+
+  async function saveEdit(id: number) {
+    if (!editForm) return;
+    setSavingEdit(true);
+    try {
+      const fields = {
+        polozka: editForm.polozka.trim(),
+        pocet_ks: parseDigits(editForm.pocet_ks),
+        cena_celkem: parseDigits(editForm.cena_celkem),
+      };
+      if (sub === "kupujeme") await updateDoplnkyNakup(id, fields);
+      else await updateDoplnkyProdej(id, fields);
+      setEditingId(null);
+      setEditForm(null);
+      await load();
+      onMutate();
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -137,16 +173,52 @@ export default function DoplnkySection({
             <div>Vyplnil</div>
           </div>
           <div>
-            {records.map((r) => (
-              <div className="simple-record" key={r.id}>
-                <div className="who">{r.polozka}</div>
-                <div className="qty">{r.pocet_ks} ks</div>
-                <div className="amount">{formatKc(r.cena_celkem)}</div>
-                <div>
-                  <AuthorBadge authorId={r.autor_id} profiles={profiles} />
+            {records.map((r) => {
+              const isEditing = editingId === r.id;
+              if (isEditing && editForm) {
+                return (
+                  <div key={r.id} className="repair-add-row" style={{ gridTemplateColumns: "1.3fr 0.6fr 0.8fr auto auto", padding: "10px 4px" }}>
+                    <input
+                      type="text"
+                      className="plain-input"
+                      value={editForm.polozka}
+                      onChange={(e) => setEditForm({ ...editForm, polozka: e.target.value })}
+                    />
+                    <input
+                      type="text"
+                      className="plain-input"
+                      value={editForm.pocet_ks}
+                      onChange={(e) => setEditForm({ ...editForm, pocet_ks: e.target.value })}
+                    />
+                    <input
+                      type="text"
+                      className="plain-input"
+                      value={editForm.cena_celkem}
+                      onChange={(e) => setEditForm({ ...editForm, cena_celkem: e.target.value })}
+                    />
+                    <button className="btn-secondary" onClick={cancelEdit}>
+                      Zrušit
+                    </button>
+                    <button className="btn-add" onClick={() => saveEdit(r.id)} disabled={savingEdit}>
+                      Uložit
+                    </button>
+                  </div>
+                );
+              }
+              return (
+                <div className="simple-record" key={r.id}>
+                  <div className="who">{r.polozka}</div>
+                  <div className="qty">{r.pocet_ks} ks</div>
+                  <div className="amount">{formatKc(r.cena_celkem)}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <AuthorBadge authorId={r.autor_id} profiles={profiles} />
+                    <button className="btn-secondary" onClick={() => startEdit(r)}>
+                      Upravit
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {!loading && records.length === 0 && <div className="stock-empty">Zatím žádné záznamy.</div>}
           </div>
 

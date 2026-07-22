@@ -17,7 +17,10 @@
       "Bash(brew --version)",
       "Read(//Users/milosserbus/**)",
       "Bash(git init *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git remote *)",
+      "Bash(git push *)"
     ]
   }
 }

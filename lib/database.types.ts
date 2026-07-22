@@ -39,6 +39,14 @@ export interface Prodej {
   created_at: string;
 }
 
+export interface NakupPoznamka {
+  id: number;
+  nakup_id: number;
+  text: string;
+  autor_id: string | null;
+  created_at: string;
+}
+
 export interface ProdejOprava {
   id: number;
   prodej_id: number;

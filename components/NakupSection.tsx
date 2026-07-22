@@ -1,8 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Profile, Nakup, NakupFase } from "@/lib/database.types";
-import { fetchActiveNakup, fetchAllNakup, addNakup, setNakupFase, fetchProfiles } from "@/lib/data";
+import type { Profile, Nakup, NakupFase, NakupPoznamka } from "@/lib/database.types";
+import {
+  fetchActiveNakup,
+  fetchAllNakup,
+  addNakup,
+  setNakupFase,
+  updateNakup,
+  fetchProfiles,
+  fetchNakupPoznamky,
+  addNakupPoznamka,
+  deleteNakupPoznamka,
+} from "@/lib/data";
 import { formatKc, formatDate, todayISO, parseDigits } from "@/lib/format";
 import AuthorBadge from "@/components/AuthorBadge";
 
@@ -41,6 +51,15 @@ function computeDodavatele(all: Nakup[]): Dodavatel[] {
   return [...map.values()].sort((a, b) => b.total - a.total);
 }
 
+interface EditForm {
+  dodavatel_jmeno: string;
+  dodavatel_telefon: string;
+  dodavatel_email: string;
+  datum: string;
+  co_koupili: string;
+  kolik_stalo: string;
+}
+
 export default function NakupSection({
   profile,
   onGoToProdej,
@@ -55,6 +74,7 @@ export default function NakupSection({
   const [sub, setSub] = useState<"nakupy" | "dodavatele">("nakupy");
   const [activeNakup, setActiveNakup] = useState<Nakup[]>([]);
   const [allNakup, setAllNakup] = useState<Nakup[]>([]);
+  const [poznamky, setPoznamky] = useState<NakupPoznamka[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -67,12 +87,23 @@ export default function NakupSection({
   const [cena, setCena] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
+
   async function load() {
     setLoading(true);
-    const [active, all, profs] = await Promise.all([fetchActiveNakup(), fetchAllNakup(), fetchProfiles()]);
+    const [active, all, profs, notes] = await Promise.all([
+      fetchActiveNakup(),
+      fetchAllNakup(),
+      fetchProfiles(),
+      fetchNakupPoznamky().catch(() => [] as NakupPoznamka[]),
+    ]);
     setActiveNakup(active);
     setAllNakup(all);
     setProfiles(profs);
+    setPoznamky(notes);
     setLoading(false);
   }
 
@@ -123,6 +154,57 @@ export default function NakupSection({
     setActiveNakup((prev) => prev.map((n) => (n.id === id ? { ...n, fase } : n)));
     await setNakupFase(id, fase);
     onMutate();
+  }
+
+  function startEdit(r: Nakup) {
+    setEditingId(r.id);
+    setEditForm({
+      dodavatel_jmeno: r.dodavatel_jmeno,
+      dodavatel_telefon: r.dodavatel_telefon || "",
+      dodavatel_email: r.dodavatel_email || "",
+      datum: r.datum || "",
+      co_koupili: r.co_koupili,
+      kolik_stalo: String(r.kolik_stalo),
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditForm(null);
+  }
+
+  async function saveEdit(id: number) {
+    if (!editForm) return;
+    setSavingEdit(true);
+    try {
+      await updateNakup(id, {
+        dodavatel_jmeno: editForm.dodavatel_jmeno.trim(),
+        dodavatel_telefon: editForm.dodavatel_telefon.trim() || null,
+        dodavatel_email: editForm.dodavatel_email.trim() || null,
+        datum: editForm.datum || null,
+        co_koupili: editForm.co_koupili.trim(),
+        kolik_stalo: parseDigits(editForm.kolik_stalo),
+      });
+      setEditingId(null);
+      setEditForm(null);
+      await load();
+      onMutate();
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function addNote(nakupId: number) {
+    const text = (noteDrafts[nakupId] || "").trim();
+    if (!text) return;
+    await addNakupPoznamka({ nakup_id: nakupId, text, autor_id: profile.id });
+    setNoteDrafts((prev) => ({ ...prev, [nakupId]: "" }));
+    await load();
+  }
+
+  async function removeNote(id: number) {
+    await deleteNakupPoznamka(id);
+    await load();
   }
 
   function toggleDodavatel(key: string) {
@@ -207,43 +289,149 @@ export default function NakupSection({
           </div>
 
           <div>
-            {activeNakup.map((r) => (
-              <div className="buy-card" key={r.id}>
-                <div className="buy-card-top">
-                  <div>
-                    <div className="buy-name">{r.dodavatel_jmeno}</div>
-                    <div className="sale-contact">
-                      {formatDate(r.datum)} · {r.dodavatel_telefon || "—"} · {r.dodavatel_email || "—"}
-                    </div>
-                    <div className="buy-item">{r.co_koupili}</div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-                    <div className="amount" style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>
-                      {formatKc(r.kolik_stalo)}
-                    </div>
-                    <AuthorBadge authorId={r.autor_id} profiles={profiles} />
-                  </div>
-                </div>
-                <div className="buy-footer">
-                  <div className="stage-pills">
-                    {NAKUP_PHASES.map((p) => (
-                      <div
-                        key={p.key}
-                        className={`stage-pill ${r.fase === p.key ? "active" : ""}`}
-                        onClick={() => handlePhaseClick(r.id, p.key)}
-                      >
-                        {p.label}
+            {activeNakup.map((r) => {
+              const isEditing = editingId === r.id;
+              const notes = poznamky.filter((p) => p.nakup_id === r.id);
+              return (
+                <div className="buy-card" key={r.id}>
+                  {isEditing && editForm ? (
+                    <>
+                      <div className="prodej-row cols-3">
+                        <div className="field">
+                          <label>Celé jméno</label>
+                          <input
+                            type="text"
+                            value={editForm.dodavatel_jmeno}
+                            onChange={(e) => setEditForm({ ...editForm, dodavatel_jmeno: e.target.value })}
+                          />
+                        </div>
+                        <div className="field">
+                          <label>Telefon</label>
+                          <input
+                            type="text"
+                            value={editForm.dodavatel_telefon}
+                            onChange={(e) => setEditForm({ ...editForm, dodavatel_telefon: e.target.value })}
+                          />
+                        </div>
+                        <div className="field">
+                          <label>Email</label>
+                          <input
+                            type="text"
+                            value={editForm.dodavatel_email}
+                            onChange={(e) => setEditForm({ ...editForm, dodavatel_email: e.target.value })}
+                          />
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                  {r.fase === "pripraveno" && (
-                    <button className="btn-transfer" onClick={() => onGoToProdej(r.id)}>
-                      → Nabídnout k prodeji
-                    </button>
+                      <div className="prodej-row cols-4" style={{ marginTop: 12 }}>
+                        <div className="field">
+                          <label>Datum</label>
+                          <input type="date" value={editForm.datum} onChange={(e) => setEditForm({ ...editForm, datum: e.target.value })} />
+                        </div>
+                        <div className="field" style={{ gridColumn: "span 2" }}>
+                          <label>Co jsme koupili</label>
+                          <input
+                            type="text"
+                            value={editForm.co_koupili}
+                            onChange={(e) => setEditForm({ ...editForm, co_koupili: e.target.value })}
+                          />
+                        </div>
+                        <div className="field">
+                          <label>Kolik to stálo</label>
+                          <input
+                            type="text"
+                            value={editForm.kolik_stalo}
+                            onChange={(e) => setEditForm({ ...editForm, kolik_stalo: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                        <button className="btn-secondary" onClick={cancelEdit}>
+                          Zrušit
+                        </button>
+                        <button className="btn-add" onClick={() => saveEdit(r.id)} disabled={savingEdit}>
+                          Uložit
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="buy-card-top">
+                        <div>
+                          <div className="buy-name">{r.dodavatel_jmeno}</div>
+                          <div className="sale-contact">
+                            {formatDate(r.datum)} · {r.dodavatel_telefon || "—"} · {r.dodavatel_email || "—"}
+                          </div>
+                          <div className="buy-item">{r.co_koupili}</div>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                          <div className="amount" style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>
+                            {formatKc(r.kolik_stalo)}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <AuthorBadge authorId={r.autor_id} profiles={profiles} />
+                            <button className="btn-secondary" onClick={() => startEdit(r)}>
+                              Upravit
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="buy-footer">
+                        <div className="stage-pills">
+                          {NAKUP_PHASES.map((p) => (
+                            <div
+                              key={p.key}
+                              className={`stage-pill ${r.fase === p.key ? "active" : ""}`}
+                              onClick={() => handlePhaseClick(r.id, p.key)}
+                            >
+                              {p.label}
+                            </div>
+                          ))}
+                        </div>
+                        {r.fase === "pripraveno" && (
+                          <button className="btn-transfer" onClick={() => onGoToProdej(r.id)}>
+                            → Nabídnout k prodeji
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="form-section-label" style={{ marginTop: 14 }}>
+                        Poznámky
+                      </div>
+                      {notes.length > 0 && (
+                        <div className="repair-list">
+                          {notes.map((n) => (
+                            <div className="repair-item" key={n.id}>
+                              <div className="r-desc">
+                                {n.text}
+                                <span style={{ color: "var(--gray-2)", marginLeft: 8, fontFamily: "var(--mono)", fontSize: 11 }}>
+                                  {new Date(n.created_at).toLocaleDateString("cs-CZ")} ·{" "}
+                                  {profiles.find((p) => p.id === n.autor_id)?.full_name || "—"}
+                                </span>
+                              </div>
+                              <button className="r-remove" onClick={() => removeNote(n.id)}>
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="repair-add-row" style={{ gridTemplateColumns: "1fr auto" }}>
+                        <input
+                          type="text"
+                          className="plain-input"
+                          value={noteDrafts[r.id] || ""}
+                          onChange={(e) => setNoteDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                          placeholder="např. objednána nová baterka na Alze"
+                        />
+                        <button className="btn-secondary" onClick={() => addNote(r.id)}>
+                          + Přidat poznámku
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {!loading && activeNakup.length === 0 && <div className="stock-empty">Zatím žádné nákupy.</div>}
           </div>
 

@@ -3,6 +3,7 @@ import type {
   Profile,
   Nakup,
   NakupFase,
+  NakupPoznamka,
   Prodej,
   ProdejStav,
   ProdejOprava,
@@ -73,6 +74,48 @@ export async function addNakup(input: {
 
 export async function setNakupFase(id: number, fase: NakupFase): Promise<void> {
   const { error } = await supabase.from("nakup").update({ fase }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function updateNakup(
+  id: number,
+  fields: Partial<{
+    dodavatel_jmeno: string;
+    dodavatel_telefon: string | null;
+    dodavatel_email: string | null;
+    datum: string | null;
+    co_koupili: string;
+    kolik_stalo: number;
+  }>
+): Promise<void> {
+  const { error } = await supabase.from("nakup").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
+// Nákup — ruční poznámky
+// ---------------------------------------------------------------------------
+
+export async function fetchNakupPoznamky(): Promise<NakupPoznamka[]> {
+  const { data, error } = await supabase
+    .from("nakup_poznamky")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data as NakupPoznamka[];
+}
+
+export async function addNakupPoznamka(input: {
+  nakup_id: number;
+  text: string;
+  autor_id: string | null;
+}): Promise<void> {
+  const { error } = await supabase.from("nakup_poznamky").insert(input);
+  if (error) throw error;
+}
+
+export async function deleteNakupPoznamka(id: number): Promise<void> {
+  const { error } = await supabase.from("nakup_poznamky").delete().eq("id", id);
   if (error) throw error;
 }
 
@@ -173,6 +216,36 @@ export async function setProdejStav(id: number, stav: ProdejStav): Promise<void>
   if (error) throw error;
 }
 
+export async function updateProdej(
+  id: number,
+  fields: Partial<{
+    klient_jmeno: string;
+    klient_telefon: string | null;
+    klient_email: string | null;
+    klient_adresa: string | null;
+    polozka: string;
+    cena: number;
+  }>
+): Promise<void> {
+  const { error } = await supabase.from("prodej").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+export async function addProdejOprava(prodej_id: number, popis: string, cena: number): Promise<void> {
+  const { error } = await supabase.from("prodej_opravy").insert({ prodej_id, popis, cena });
+  if (error) throw error;
+}
+
+export async function updateProdejOprava(id: number, fields: Partial<{ popis: string; cena: number }>): Promise<void> {
+  const { error } = await supabase.from("prodej_opravy").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteProdejOprava(id: number): Promise<void> {
+  const { error } = await supabase.from("prodej_opravy").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function setProdejInvoice(
   id: number,
   fields: { invoice_number: string; invoice_vs: string; invoice_date_issue: string; invoice_date_due: string }
@@ -234,6 +307,22 @@ export async function addDoplnkyProdej(input: {
   autor_id: string | null;
 }): Promise<void> {
   const { error } = await supabase.from("doplnky_prodej").insert(input);
+  if (error) throw error;
+}
+
+export async function updateDoplnkyNakup(
+  id: number,
+  fields: Partial<{ polozka: string; pocet_ks: number; cena_celkem: number }>
+): Promise<void> {
+  const { error } = await supabase.from("doplnky_nakup").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+export async function updateDoplnkyProdej(
+  id: number,
+  fields: Partial<{ polozka: string; pocet_ks: number; cena_celkem: number }>
+): Promise<void> {
+  const { error } = await supabase.from("doplnky_prodej").update(fields).eq("id", id);
   if (error) throw error;
 }
 

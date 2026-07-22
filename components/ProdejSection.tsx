@@ -7,6 +7,10 @@ import {
   fetchProdej,
   addProdej,
   setProdejStav,
+  updateProdej,
+  addProdejOprava,
+  updateProdejOprava,
+  deleteProdejOprava,
   fetchProfiles,
   fetchDoplnkyNakup,
   fetchDoplnkyProdej,
@@ -36,6 +40,15 @@ interface DoplnekLine {
   polozka: string;
   qty: number;
   price: number;
+}
+
+interface ProdejEditForm {
+  klient_jmeno: string;
+  klient_telefon: string;
+  klient_email: string;
+  klient_adresa: string;
+  polozka: string;
+  cena: string;
 }
 
 function netForSale(r: ProdejFull): number {
@@ -80,6 +93,12 @@ export default function ProdejSection({
   const [doplnekSelect, setDoplnekSelect] = useState("");
   const [doplnekQty, setDoplnekQty] = useState("1");
   const [submitting, setSubmitting] = useState(false);
+
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<ProdejEditForm | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [newOpravaDesc, setNewOpravaDesc] = useState("");
+  const [newOpravaPrice, setNewOpravaPrice] = useState("");
 
   async function load() {
     setLoading(true);
@@ -189,6 +208,67 @@ export default function ProdejSection({
 
   async function handleStavClick(id: number, stav: ProdejStav) {
     await setProdejStav(id, stav);
+    await load();
+    onMutate();
+  }
+
+  function startEdit(r: ProdejFull) {
+    setEditingId(r.id);
+    setEditForm({
+      klient_jmeno: r.klient_jmeno,
+      klient_telefon: r.klient_telefon || "",
+      klient_email: r.klient_email || "",
+      klient_adresa: r.klient_adresa || "",
+      polozka: r.polozka,
+      cena: String(r.cena),
+    });
+    setNewOpravaDesc("");
+    setNewOpravaPrice("");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditForm(null);
+  }
+
+  async function saveEdit(id: number) {
+    if (!editForm) return;
+    setSavingEdit(true);
+    try {
+      await updateProdej(id, {
+        klient_jmeno: editForm.klient_jmeno.trim(),
+        klient_telefon: editForm.klient_telefon.trim() || null,
+        klient_email: editForm.klient_email.trim() || null,
+        klient_adresa: editForm.klient_adresa.trim() || null,
+        polozka: editForm.polozka.trim(),
+        cena: parseDigits(editForm.cena),
+      });
+      setEditingId(null);
+      setEditForm(null);
+      await load();
+      onMutate();
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleAddOprava(prodejId: number) {
+    if (!newOpravaDesc.trim() || !newOpravaPrice.trim()) return;
+    await addProdejOprava(prodejId, newOpravaDesc.trim(), parseDigits(newOpravaPrice));
+    setNewOpravaDesc("");
+    setNewOpravaPrice("");
+    await load();
+    onMutate();
+  }
+
+  async function handleUpdateOprava(opravaId: number, popis: string, cena: string) {
+    await updateProdejOprava(opravaId, { popis: popis.trim(), cena: parseDigits(cena) });
+    await load();
+    onMutate();
+  }
+
+  async function handleRemoveOprava(opravaId: number) {
+    await deleteProdejOprava(opravaId);
     await load();
     onMutate();
   }
@@ -402,35 +482,131 @@ export default function ProdejSection({
           const net = netForSale(r);
           const repairsTotal = r.opravy.reduce((s, x) => s + x.cena, 0);
           const doplnkyTotal = r.doplnky.reduce((s, x) => s + x.cena, 0);
+          const isEditing = editingId === r.id;
           return (
             <div className="sale-card" key={r.id}>
-              <div className="sale-card-top">
-                <div>
-                  <div className="sale-name">{r.klient_jmeno}</div>
-                  <div className="sale-contact">
-                    {r.klient_adresa || "—"} · {r.klient_telefon || "—"} · {r.klient_email || "—"}
+              {isEditing && editForm ? (
+                <>
+                  <div className="prodej-row cols-3">
+                    <div className="field">
+                      <label>Jméno</label>
+                      <input type="text" value={editForm.klient_jmeno} onChange={(e) => setEditForm({ ...editForm, klient_jmeno: e.target.value })} />
+                    </div>
+                    <div className="field">
+                      <label>Telefon</label>
+                      <input type="text" value={editForm.klient_telefon} onChange={(e) => setEditForm({ ...editForm, klient_telefon: e.target.value })} />
+                    </div>
+                    <div className="field">
+                      <label>Email</label>
+                      <input type="text" value={editForm.klient_email} onChange={(e) => setEditForm({ ...editForm, klient_email: e.target.value })} />
+                    </div>
                   </div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-                  <div className="amount" style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>
-                    {formatKc(r.cena)}
+                  <div className="prodej-row cols-1" style={{ marginTop: 12 }}>
+                    <div className="field">
+                      <label>Adresa</label>
+                      <input type="text" value={editForm.klient_adresa} onChange={(e) => setEditForm({ ...editForm, klient_adresa: e.target.value })} />
+                    </div>
                   </div>
-                  <AuthorBadge authorId={r.autor_id} profiles={profiles} />
-                </div>
-              </div>
-              <div className="sale-item">{r.polozka}</div>
-              <div className="sale-contact" style={{ marginTop: 4 }}>
-                koupeno od: <b style={{ color: "var(--gray-1)", fontWeight: 600 }}>{r.nakup?.dodavatel_jmeno || "—"}</b> za{" "}
-                {formatKc(r.nakup?.kolik_stalo ?? 0)}
-              </div>
-              <div className="sale-repairs" style={{ marginTop: 8 }}>
-                {r.opravy.length ? r.opravy.map((o) => `${o.popis} — ${formatKc(o.cena)}`).join(", ") : "žádné opravy"}
-              </div>
-              {r.doplnky.length > 0 && (
-                <div className="sale-repairs" style={{ marginTop: 6, color: "var(--gray-1)" }}>
-                  doplňkový prodej:{" "}
-                  <span style={{ color: "var(--gray-2)" }}>{r.doplnky.map((d) => `${d.polozka} × ${d.pocet_ks} ks — ${formatKc(d.cena)}`).join(", ")}</span>
-                </div>
+                  <div className="prodej-row cols-2" style={{ marginTop: 12 }}>
+                    <div className="field">
+                      <label>Položka</label>
+                      <input type="text" value={editForm.polozka} onChange={(e) => setEditForm({ ...editForm, polozka: e.target.value })} />
+                    </div>
+                    <div className="field">
+                      <label>Za kolik jsme prodali</label>
+                      <input type="text" value={editForm.cena} onChange={(e) => setEditForm({ ...editForm, cena: e.target.value })} />
+                    </div>
+                  </div>
+
+                  <div className="form-section-label">Opravy před prodejem</div>
+                  <div className="repair-list">
+                    {r.opravy.map((o) => (
+                      <div className="repair-item" key={o.id}>
+                        <input
+                          type="text"
+                          className="plain-input"
+                          style={{ flex: 1 }}
+                          defaultValue={o.popis}
+                          onBlur={(e) => handleUpdateOprava(o.id, e.target.value, String(o.cena))}
+                        />
+                        <input
+                          type="text"
+                          className="plain-input"
+                          style={{ width: 90 }}
+                          defaultValue={o.cena}
+                          onBlur={(e) => handleUpdateOprava(o.id, o.popis, e.target.value)}
+                        />
+                        <button className="r-remove" onClick={() => handleRemoveOprava(o.id)}>
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="repair-add-row">
+                    <input
+                      type="text"
+                      className="plain-input"
+                      value={newOpravaDesc}
+                      onChange={(e) => setNewOpravaDesc(e.target.value)}
+                      placeholder="např. oprava baterky"
+                    />
+                    <input
+                      type="text"
+                      className="plain-input"
+                      value={newOpravaPrice}
+                      onChange={(e) => setNewOpravaPrice(e.target.value)}
+                      placeholder="400"
+                    />
+                    <button className="btn-secondary" onClick={() => handleAddOprava(r.id)}>
+                      + Přidat opravu
+                    </button>
+                  </div>
+
+                  <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                    <button className="btn-secondary" onClick={cancelEdit}>
+                      Zrušit
+                    </button>
+                    <button className="btn-add" onClick={() => saveEdit(r.id)} disabled={savingEdit}>
+                      Uložit
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="sale-card-top">
+                    <div>
+                      <div className="sale-name">{r.klient_jmeno}</div>
+                      <div className="sale-contact">
+                        {r.klient_adresa || "—"} · {r.klient_telefon || "—"} · {r.klient_email || "—"}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                      <div className="amount" style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>
+                        {formatKc(r.cena)}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <AuthorBadge authorId={r.autor_id} profiles={profiles} />
+                        <button className="btn-secondary" onClick={() => startEdit(r)}>
+                          Upravit
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="sale-item">{r.polozka}</div>
+                  <div className="sale-contact" style={{ marginTop: 4 }}>
+                    koupeno od: <b style={{ color: "var(--gray-1)", fontWeight: 600 }}>{r.nakup?.dodavatel_jmeno || "—"}</b> za{" "}
+                    {formatKc(r.nakup?.kolik_stalo ?? 0)}
+                  </div>
+                  <div className="sale-repairs" style={{ marginTop: 8 }}>
+                    {r.opravy.length ? r.opravy.map((o) => `${o.popis} — ${formatKc(o.cena)}`).join(", ") : "žádné opravy"}
+                  </div>
+                  {r.doplnky.length > 0 && (
+                    <div className="sale-repairs" style={{ marginTop: 6, color: "var(--gray-1)" }}>
+                      doplňkový prodej:{" "}
+                      <span style={{ color: "var(--gray-2)" }}>{r.doplnky.map((d) => `${d.polozka} × ${d.pocet_ks} ks — ${formatKc(d.cena)}`).join(", ")}</span>
+                    </div>
+                  )}
+                </>
               )}
 
               <div className="summary-box" style={{ marginTop: 12 }}>
