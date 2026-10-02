@@ -1,17 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Profile, Nakup, ProdejStav, DoplnkyNakup, DoplnkyProdej, DoplnkyCena } from "@/lib/database.types";
+import type { Profile, Nakup, ProdejStav, DoplnkyNakup, DoplnkyProdej, DoplnkyCena, DilnaNaklad } from "@/lib/database.types";
 import {
   fetchActiveNakup,
   fetchProdej,
+  fetchDilnaNaklady,
   addProdej,
   setProdejStav,
   deleteProdej,
   updateProdej,
-  addProdejOprava,
-  updateProdejOprava,
-  deleteProdejOprava,
+  addProdejPolozka,
+  updateProdejPolozka,
+  deleteProdejPolozka,
   fetchProfiles,
   fetchDoplnkyNakup,
   fetchDoplnkyProdej,
@@ -19,6 +20,12 @@ import {
   computeStock,
   estimateDoplnekUnitPrice,
   netForSale,
+  itemCost,
+  itemsRevenue,
+  totalCost,
+  returnToFirm,
+  feesOf,
+  orderNumber,
   type ProdejFull,
 } from "@/lib/data";
 import { formatKc, formatDate, parseDigits, todayISO } from "@/lib/format";
@@ -44,24 +51,41 @@ import ListFilters, {
   type Filters,
 } from "@/components/ListFilters";
 
-interface Repair {
-  desc: string;
-  price: number;
+interface FormLine {
+  nakupId: number;
+  cena: string;
 }
 interface DoplnekLine {
   polozka: string;
   qty: number;
   price: number;
 }
-
 interface ProdejEditForm {
   klient_jmeno: string;
   klient_telefon: string;
   klient_email: string;
   klient_adresa: string;
-  polozka: string;
-  cena: string;
   datum: string;
+  balne: string;
+  postovne: string;
+}
+
+const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
+
+// Řádky pro zobrazení objednávky (starší záznamy bez položek se zobrazí jako jedna).
+function displayItems(r: ProdejFull) {
+  if (r.polozky.length) {
+    return r.polozky.map((p) => ({
+      id: p.id as number | null,
+      name: p.nakup?.co_koupili ?? "?",
+      cena: p.cena,
+      nakupCena: p.nakup?.kolik_stalo ?? 0,
+      dilna: sum(p.naklady.map((x) => x.cena)),
+      cost: itemCost(p),
+    }));
+  }
+  const buy = r.nakup?.kolik_stalo ?? 0;
+  return [{ id: null as number | null, name: r.polozka, cena: r.cena, nakupCena: buy, dilna: 0, cost: buy }];
 }
 
 export default function ProdejSection({
@@ -78,6 +102,7 @@ export default function ProdejSection({
   onPreselectConsumed: () => void;
 }) {
   const [availableNakup, setAvailableNakup] = useState<Nakup[]>([]);
+  const [naklady, setNaklady] = useState<DilnaNaklad[]>([]);
   const [prodejList, setProdejList] = useState<ProdejFull[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [doplnkyNakup, setDoplnkyNakupState] = useState<DoplnkyNakup[]>([]);
@@ -85,37 +110,42 @@ export default function ProdejSection({
   const [doplnkyCeny, setDoplnkyCeny] = useState<DoplnkyCena[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // nová objednávka
   const [klientJmeno, setKlientJmeno] = useState("");
   const [klientTelefon, setKlientTelefon] = useState("");
   const [klientEmail, setKlientEmail] = useState("");
   const [klientAdresa, setKlientAdresa] = useState("");
   const [prodejDatum, setProdejDatum] = useState(todayISO());
-  const [selectedNakupId, setSelectedNakupId] = useState<string>("");
-  const [prodejCena, setProdejCena] = useState("");
-  const [repairs, setRepairs] = useState<Repair[]>([]);
-  const [repairDesc, setRepairDesc] = useState("");
-  const [repairPrice, setRepairPrice] = useState("");
+  const [lines, setLines] = useState<FormLine[]>([]);
+  const [addSelect, setAddSelect] = useState("");
+  const [balne, setBalne] = useState(String(FEE_BALENE));
+  const [postovne, setPostovne] = useState(String(FEE_POSTOVNE));
   const [doplnekLines, setDoplnekLines] = useState<DoplnekLine[]>([]);
   const [doplnekSelect, setDoplnekSelect] = useState("");
   const [doplnekQty, setDoplnekQty] = useState("1");
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // úprava existující objednávky
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<ProdejEditForm | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
-  const [newOpravaDesc, setNewOpravaDesc] = useState("");
-  const [newOpravaPrice, setNewOpravaPrice] = useState("");
+  const [editAddSelect, setEditAddSelect] = useState("");
+  const [editAddPrice, setEditAddPrice] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
 
   async function load() {
     setLoading(true);
-    const [nakup, prodej, profs, dn, dp, dc] = await Promise.all([
+    const [nakup, prodej, profs, dn, dp, dc, nk] = await Promise.all([
       fetchActiveNakup(),
       fetchProdej(),
       fetchProfiles(),
       fetchDoplnkyNakup(),
       fetchDoplnkyProdej(),
       fetchDoplnkyCeny(),
+      fetchDilnaNaklady().catch(() => [] as DilnaNaklad[]),
     ]);
     setAvailableNakup(nakup.filter((n) => n.fase === "pripraveno"));
     setProdejList(prodej);
@@ -123,6 +153,7 @@ export default function ProdejSection({
     setDoplnkyNakupState(dn);
     setDoplnkyProdejState(dp);
     setDoplnkyCeny(dc);
+    setNaklady(nk);
     setLoading(false);
   }
 
@@ -131,46 +162,49 @@ export default function ProdejSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
+  // "→ Nabídnout k prodeji" z Nákupu/Dílny přidá položku do formuláře
   useEffect(() => {
     if (preselectNakupId != null) {
-      setSelectedNakupId(String(preselectNakupId));
+      setLines((prev) => (prev.some((l) => l.nakupId === preselectNakupId) ? prev : [...prev, { nakupId: preselectNakupId, cena: "" }]));
       onPreselectConsumed();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preselectNakupId, availableNakup]);
+  }, [preselectNakupId]);
 
-  const selectedNakup = useMemo(
-    () => availableNakup.find((n) => n.id === parseInt(selectedNakupId || "-1", 10)) ?? null,
-    [availableNakup, selectedNakupId]
-  );
+  const nakladyOf = (nakupId: number) => sum(naklady.filter((x) => x.nakup_id === nakupId).map((x) => x.cena));
+  const nakupById = (id: number) => availableNakup.find((n) => n.id === id) ?? null;
+  const pickable = availableNakup.filter((n) => !lines.some((l) => l.nakupId === n.id));
 
   const stock = useMemo(() => computeStock(doplnkyNakup, doplnkyProdej), [doplnkyNakup, doplnkyProdej]);
   const inStock = stock.filter((s) => s.remaining > 0);
 
-  const doplnekUnitPrice = doplnekSelect
-    ? estimateDoplnekUnitPrice(doplnekSelect, doplnkyCeny, doplnkyProdej, doplnkyNakup)
-    : 0;
+  const doplnekUnitPrice = doplnekSelect ? estimateDoplnekUnitPrice(doplnekSelect, doplnkyCeny, doplnkyProdej, doplnkyNakup) : 0;
   const doplnekQtyNum = parseDigits(doplnekQty) || 0;
   const doplnekPreviewTotal = Math.round(doplnekUnitPrice * doplnekQtyNum);
   const doplnekStockRow = stock.find((s) => s.name === doplnekSelect);
 
-  const price = parseDigits(prodejCena);
-  const purchaseCost = selectedNakup?.kolik_stalo ?? 0;
-  const doplnkyFormTotal = doplnekLines.reduce((s, d) => s + d.price, 0);
-  const repairsFormTotal = repairs.reduce((s, r) => s + r.price, 0);
-  const fees = FEE_BALENE + FEE_POSTOVNE;
-  const profit = price + doplnkyFormTotal - repairsFormTotal - fees - purchaseCost;
-  const itemMargin = selectedNakup ? price - selectedNakup.kolik_stalo : null;
+  const formItems = lines.map((l) => {
+    const n = nakupById(l.nakupId);
+    const buy = n?.kolik_stalo ?? 0;
+    const dilna = nakladyOf(l.nakupId);
+    const price = parseDigits(l.cena);
+    return { line: l, nakup: n, buy, dilna, cost: buy + dilna, price, profit: price - buy - dilna };
+  });
+  const formRevenue = sum(formItems.map((i) => i.price));
+  const formCost = sum(formItems.map((i) => i.cost));
+  const formReturn = sum(formItems.map((i) => i.buy));
+  const doplnkyFormTotal = sum(doplnekLines.map((d) => d.price));
+  const fees = parseDigits(balne) + parseDigits(postovne);
+  const profit = formRevenue + doplnkyFormTotal - formCost - fees;
+  const canSubmit = !submitting && klientJmeno.trim() && lines.length > 0 && lines.every((l) => l.cena.trim());
 
-  function addRepair() {
-    if (!repairDesc.trim() || !repairPrice.trim()) return;
-    setRepairs((prev) => [...prev, { desc: repairDesc.trim(), price: parseDigits(repairPrice) }]);
-    setRepairDesc("");
-    setRepairPrice("");
+  function addLine() {
+    if (!addSelect) return;
+    setLines((prev) => [...prev, { nakupId: parseInt(addSelect, 10), cena: "" }]);
+    setAddSelect("");
   }
-  function removeRepair(i: number) {
-    setRepairs((prev) => prev.filter((_, idx) => idx !== i));
-  }
+  const setLinePrice = (nakupId: number, cena: string) => setLines((prev) => prev.map((l) => (l.nakupId === nakupId ? { ...l, cena } : l)));
+  const removeLine = (nakupId: number) => setLines((prev) => prev.filter((l) => l.nakupId !== nakupId));
 
   function addDoplnekLine() {
     if (!doplnekSelect || !doplnekQtyNum) return;
@@ -178,25 +212,23 @@ export default function ProdejSection({
     setDoplnekQty("1");
     setDoplnekSelect("");
   }
-  function removeDoplnekLine(i: number) {
-    setDoplnekLines((prev) => prev.filter((_, idx) => idx !== i));
-  }
+  const removeDoplnekLine = (i: number) => setDoplnekLines((prev) => prev.filter((_, idx) => idx !== i));
 
   async function handleSubmit() {
-    if (!klientJmeno.trim() || !selectedNakup || !prodejCena.trim()) return;
+    if (!canSubmit) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
       await addProdej({
-        nakup_id: selectedNakup.id,
         klient_jmeno: klientJmeno.trim(),
         klient_telefon: klientTelefon.trim() || null,
         klient_email: klientEmail.trim() || null,
         klient_adresa: klientAdresa.trim() || null,
-        polozka: selectedNakup.co_koupili,
-        cena: price,
         datum: prodejDatum || null,
+        balne: parseDigits(balne),
+        postovne: parseDigits(postovne),
         autor_id: profile.id,
-        opravy: repairs.map((r) => ({ popis: r.desc, cena: r.price })),
+        polozky: formItems.map((i) => ({ nakup_id: i.line.nakupId, cena: i.price, nazev: i.nakup?.co_koupili ?? "?" })),
         doplnky: doplnekLines.map((d) => ({ polozka: d.polozka, pocet_ks: d.qty, cena: d.price })),
       });
       setKlientJmeno("");
@@ -204,12 +236,14 @@ export default function ProdejSection({
       setKlientEmail("");
       setKlientAdresa("");
       setProdejDatum(todayISO());
-      setSelectedNakupId("");
-      setProdejCena("");
-      setRepairs([]);
+      setLines([]);
+      setBalne(String(FEE_BALENE));
+      setPostovne(String(FEE_POSTOVNE));
       setDoplnekLines([]);
       await load();
       onMutate();
+    } catch (e) {
+      setSubmitError((e as { message?: string })?.message ?? "Objednávku se nepodařilo uložit.");
     } finally {
       setSubmitting(false);
     }
@@ -222,7 +256,7 @@ export default function ProdejSection({
   }
 
   async function handleStavClick(id: number, stav: ProdejStav) {
-    if (stav === "storno" && !window.confirm("Opravdu stornovat? Prodej se smaže, položka se vrátí do Nákupu a doplňky na sklad.")) return;
+    if (stav === "storno" && !window.confirm("Opravdu stornovat? Objednávka se smaže, položky se vrátí do Nákupu a doplňky na sklad.")) return;
     await setProdejStav(id, stav);
     await load();
     onMutate();
@@ -230,17 +264,18 @@ export default function ProdejSection({
 
   function startEdit(r: ProdejFull) {
     setEditingId(r.id);
+    setEditError(null);
+    setEditAddSelect("");
+    setEditAddPrice("");
     setEditForm({
       klient_jmeno: r.klient_jmeno,
       klient_telefon: r.klient_telefon || "",
       klient_email: r.klient_email || "",
       klient_adresa: r.klient_adresa || "",
-      polozka: r.polozka,
-      cena: String(r.cena),
       datum: r.datum || "",
+      balne: String(r.balne),
+      postovne: String(r.postovne),
     });
-    setNewOpravaDesc("");
-    setNewOpravaPrice("");
   }
 
   function cancelEdit() {
@@ -257,9 +292,9 @@ export default function ProdejSection({
         klient_telefon: editForm.klient_telefon.trim() || null,
         klient_email: editForm.klient_email.trim() || null,
         klient_adresa: editForm.klient_adresa.trim() || null,
-        polozka: editForm.polozka.trim(),
-        cena: parseDigits(editForm.cena),
         datum: editForm.datum || null,
+        balne: parseDigits(editForm.balne),
+        postovne: parseDigits(editForm.postovne),
       });
       setEditingId(null);
       setEditForm(null);
@@ -270,23 +305,28 @@ export default function ProdejSection({
     }
   }
 
-  async function handleAddOprava(prodejId: number) {
-    if (!newOpravaDesc.trim() || !newOpravaPrice.trim()) return;
-    await addProdejOprava(prodejId, newOpravaDesc.trim(), parseDigits(newOpravaPrice));
-    setNewOpravaDesc("");
-    setNewOpravaPrice("");
+  async function editItemPrice(polozkaId: number, cena: string) {
+    await updateProdejPolozka(polozkaId, parseDigits(cena));
     await load();
     onMutate();
   }
 
-  async function handleUpdateOprava(opravaId: number, popis: string, cena: string) {
-    await updateProdejOprava(opravaId, { popis: popis.trim(), cena: parseDigits(cena) });
+  async function removeItem(r: ProdejFull, polozkaId: number) {
+    if (r.polozky.length <= 1) {
+      setEditError("Objednávka musí mít aspoň jednu položku. Pro zrušení celé objednávky použijte Smazat nebo Storno.");
+      return;
+    }
+    setEditError(null);
+    await deleteProdejPolozka(polozkaId);
     await load();
     onMutate();
   }
 
-  async function handleRemoveOprava(opravaId: number) {
-    await deleteProdejOprava(opravaId);
+  async function addItem(prodejId: number) {
+    if (!editAddSelect || !editAddPrice.trim()) return;
+    await addProdejPolozka(prodejId, parseInt(editAddSelect, 10), parseDigits(editAddPrice));
+    setEditAddSelect("");
+    setEditAddPrice("");
     await load();
     onMutate();
   }
@@ -295,7 +335,7 @@ export default function ProdejSection({
     () =>
       prodejList.filter(
         (r) =>
-          matchesText(filters, r.klient_jmeno, r.polozka) &&
+          matchesText(filters, r.klient_jmeno, r.polozka, orderNumber(r.id)) &&
           (!filters.status || r.stav === filters.status) &&
           matchesDate(r.datum || r.created_at, filters) &&
           matchesAuthor(r.autor_id, filters)
@@ -303,14 +343,16 @@ export default function ProdejSection({
     [prodejList, filters]
   );
   const filtered = filtersActive(filters);
-  const totalNet = visibleProdej.filter((r) => PAID_STATES.includes(r.stav)).reduce((s, r) => s + netForSale(r), 0);
+  const paidVisible = visibleProdej.filter((r) => PAID_STATES.includes(r.stav));
+  const totalNet = sum(paidVisible.map(netForSale));
+  const totalReturn = sum(paidVisible.map(returnToFirm));
 
   return (
     <div>
       <div className="entry-form">
-        <div className="entry-form-title">Nový záznam — prodej</div>
+        <div className="entry-form-title">Nová objednávka</div>
 
-        <div className="form-section-label">Kontakt na klienta</div>
+        <div className="form-section-label">Zákazník</div>
         <div className="prodej-row cols-3">
           <div className="field">
             <label>Jméno</label>
@@ -325,83 +367,71 @@ export default function ProdejSection({
             <input type="text" value={klientEmail} onChange={(e) => setKlientEmail(e.target.value)} placeholder="jan.novak@email.cz" />
           </div>
         </div>
-        <div className="prodej-row cols-1" style={{ marginTop: 12 }}>
-          <div className="field">
+        <div className="prodej-row cols-3" style={{ marginTop: 12 }}>
+          <div className="field" style={{ gridColumn: "span 2" }}>
             <label>Adresa</label>
             <input type="text" value={klientAdresa} onChange={(e) => setKlientAdresa(e.target.value)} placeholder="Ulice 123, 700 30 Ostrava" />
-          </div>
-        </div>
-
-        <div className="form-section-label">
-          Prodávaná položka <span>(vybírá se z databáze Nákup — jen &quot;Připraveno k prodeji&quot;)</span>
-        </div>
-        <div className="prodej-row cols-3">
-          <div className="field" style={{ gridColumn: "span 2" }}>
-            <label>Co prodáváme</label>
-            <select value={selectedNakupId} onChange={(e) => setSelectedNakupId(e.target.value)}>
-              <option value="">— vyberte položku z Nákupu —</option>
-              {availableNakup.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.co_koupili} ({n.dodavatel_jmeno}, nákup {formatKc(n.kolik_stalo)})
-                </option>
-              ))}
-            </select>
           </div>
           <div className="field">
             <label>Datum</label>
             <input type="date" value={prodejDatum} onChange={(e) => setProdejDatum(e.target.value)} />
           </div>
         </div>
-        <div className="prodej-row cols-2" style={{ marginTop: 12 }}>
-          <div className="field">
-            <label>Za kolik jsme prodali</label>
-            <input type="text" value={prodejCena} onChange={(e) => setProdejCena(e.target.value)} placeholder="např. 58000" />
-          </div>
-        </div>
-
-        <div className="prodej-row cols-2" style={{ marginTop: 12 }}>
-          <div className="fee-chip">
-            <span className="fee-label">Nákupní cena</span>
-            <span className="fee-value">{selectedNakup ? formatKc(selectedNakup.kolik_stalo) : "— Kč"}</span>
-          </div>
-          <div className="fee-chip">
-            <span className="fee-label">Hrubá marže</span>
-            <span className={`fee-value ${itemMargin !== null ? (itemMargin >= 0 ? "profit-pos" : "profit-neg") : ""}`}>
-              {itemMargin !== null ? formatKc(itemMargin) : "— Kč"}
-            </span>
-          </div>
-        </div>
 
         <div className="form-section-label">
-          Opravy před prodejem <span>(nepovinné, lze přidat víc)</span>
+          Položky objednávky <span>(z Nákupu — jen &quot;Připraveno k prodeji&quot;; lze přidat víc)</span>
         </div>
-        <div className="repair-add-row">
-          <input
-            type="text"
-            className="plain-input"
-            value={repairDesc}
-            onChange={(e) => setRepairDesc(e.target.value)}
-            placeholder="např. oprava baterky"
-          />
-          <input type="text" className="plain-input" value={repairPrice} onChange={(e) => setRepairPrice(e.target.value)} placeholder="400" />
-          <button className="btn-secondary" onClick={addRepair}>
-            + Přidat opravu
+        <div className="repair-add-row" style={{ gridTemplateColumns: "1fr auto", marginTop: 0 }}>
+          <select className="plain-select" value={addSelect} onChange={(e) => setAddSelect(e.target.value)}>
+            <option value="">— vyberte položku —</option>
+            {pickable.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.co_koupili} (nákup {formatKc(n.kolik_stalo)}
+                {nakladyOf(n.id) > 0 ? ` + dílna ${formatKc(nakladyOf(n.id))}` : ""})
+              </option>
+            ))}
+          </select>
+          <button className="btn-secondary" onClick={addLine} disabled={!addSelect}>
+            + Přidat položku
           </button>
         </div>
-        <div className="repair-list">
-          {repairs.map((r, i) => (
-            <div className="repair-item" key={i}>
-              <div className="r-desc">{r.desc}</div>
-              <div className="r-price">{formatKc(r.price)}</div>
-              <button className="r-remove" onClick={() => removeRepair(i)}>
-                ✕
-              </button>
+        {availableNakup.length === 0 && <div className="ship-hint">Nic není připravené k prodeji. Hotové položky označte v Dílně.</div>}
+
+        {formItems.length > 0 && (
+          <div className="order-items" style={{ marginTop: 12 }}>
+            <div className="order-item head">
+              <div>Položka</div>
+              <div>Náklad (nákup + dílna)</div>
+              <div>Prodejní cena</div>
+              <div className="amount">Zisk</div>
+              <div />
             </div>
-          ))}
-        </div>
+            {formItems.map((i) => (
+              <div className="order-item" key={i.line.nakupId}>
+                <div className="who">{i.nakup?.co_koupili ?? "?"}</div>
+                <div className="todo-meta">
+                  {formatKc(i.buy)} + {formatKc(i.dilna)} = <b>{formatKc(i.cost)}</b>
+                </div>
+                <input
+                  type="text"
+                  className="plain-input"
+                  value={i.line.cena}
+                  onChange={(e) => setLinePrice(i.line.nakupId, e.target.value)}
+                  placeholder="Kč"
+                />
+                <div className={`amount ${i.line.cena.trim() ? (i.profit >= 0 ? "profit-pos" : "profit-neg") : ""}`}>
+                  {i.line.cena.trim() ? formatKc(i.profit) : "—"}
+                </div>
+                <button className="r-remove" onClick={() => removeLine(i.line.nakupId)}>
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="form-section-label">
-          Doplňkový prodej <span>(nepovinné, ze skladu doplňků)</span>
+          Doplňkový prodej <span>(nepovinné, ze skladu doplňků; lze přidat víc)</span>
         </div>
         <div className="repair-add-row" style={{ gridTemplateColumns: "1.4fr 100px auto" }}>
           <select className="plain-select" value={doplnekSelect} onChange={(e) => setDoplnekSelect(e.target.value)}>
@@ -443,75 +473,66 @@ export default function ProdejSection({
         </div>
 
         <div className="form-section-label">
-          Poplatky <span>(pevné částky)</span>
+          Poplatky <span>(za celou objednávku; při osobním předání klidně 0)</span>
         </div>
         <div className="prodej-row cols-2">
-          <div className="fee-chip">
-            <span className="fee-label">Balné</span>
-            <span className="fee-value">{FEE_BALENE} Kč</span>
+          <div className="field">
+            <label>Balné</label>
+            <input type="text" value={balne} onChange={(e) => setBalne(e.target.value)} />
           </div>
-          <div className="fee-chip">
-            <span className="fee-label">Poštovné</span>
-            <span className="fee-value">{FEE_POSTOVNE} Kč</span>
+          <div className="field">
+            <label>Poštovné</label>
+            <input type="text" value={postovne} onChange={(e) => setPostovne(e.target.value)} />
           </div>
         </div>
 
-        <div className="form-section-label">
-          Souhrn a rozdělení <span>(počítá se ze všeho výše)</span>
-        </div>
+        <div className="form-section-label">Souhrn</div>
         <div className="summary-box">
           <div className="summary-row">
-            <span>Za kolik jsme prodali</span>
-            <b>{formatKc(price)}</b>
+            <span>Prodali jsme za (položky)</span>
+            <b>{formatKc(formRevenue)}</b>
           </div>
           <div className="summary-row">
             <span>+ Doplňkový prodej</span>
             <b>{formatKc(doplnkyFormTotal)}</b>
           </div>
           <div className="summary-row dim">
-            <span>− Nákupní cena (od dodavatele)</span>
-            <b>{formatKc(purchaseCost)}</b>
-          </div>
-          <div className="summary-row dim">
-            <span>− Opravy před prodejem</span>
-            <b>{formatKc(repairsFormTotal)}</b>
+            <span>− Náklad položek (nákup + dílna)</span>
+            <b>{formatKc(formCost)}</b>
           </div>
           <div className="summary-row dim">
             <span>− Balné a poštovné</span>
             <b>{formatKc(fees)}</b>
           </div>
           <div className="summary-row total">
-            <span>Marže (100%)</span>
+            <span>Zisk</span>
             <b className={profit >= 0 ? "profit-pos" : "profit-neg"}>{formatKc(profit)}</b>
           </div>
         </div>
 
-        <div className="prodej-row cols-3" style={{ marginTop: 12 }}>
+        <div className="prodej-row cols-2" style={{ marginTop: 12 }}>
           <div className="fee-chip">
-            <span className="fee-label">Vrátit do firmy 80%</span>
-            <span className="fee-value">{formatKc(Math.round(profit * 0.8))}</span>
+            <span className="fee-label">Vrátit do firmy (nákupní ceny)</span>
+            <span className="fee-value">{formatKc(formReturn)}</span>
           </div>
           <div className="fee-chip">
-            <span className="fee-label">CEO 12%</span>
-            <span className="fee-value">{formatKc(Math.round(profit * 0.12))}</span>
-          </div>
-          <div className="fee-chip">
-            <span className="fee-label">Zástupce 8%</span>
-            <span className="fee-value">{formatKc(Math.round(profit * 0.08))}</span>
+            <span className="fee-label">Zisk po všech nákladech</span>
+            <span className={`fee-value ${profit >= 0 ? "profit-pos" : "profit-neg"}`}>{formatKc(profit)}</span>
           </div>
         </div>
 
+        {submitError && <div className="delete-error" style={{ textAlign: "left", marginTop: 12 }}>{submitError}</div>}
         <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end" }}>
-          <button className="btn-add" onClick={handleSubmit} disabled={submitting || !selectedNakup || !klientJmeno.trim() || !prodejCena.trim()}>
-            + Přidat prodej
+          <button className="btn-add" onClick={handleSubmit} disabled={!canSubmit}>
+            + Vytvořit objednávku
           </button>
         </div>
       </div>
 
       <div className="list-header">
-        <div className="list-title">Prodeje</div>
+        <div className="list-title">Objednávky</div>
         <div className="list-sub">
-          {loading ? "…" : filtered ? `${visibleProdej.length} Z ${prodejList.length} ZÁZNAMŮ` : `${prodejList.length} ZÁZNAMŮ`}
+          {loading ? "…" : filtered ? `${visibleProdej.length} Z ${prodejList.length} OBJEDNÁVEK` : `${prodejList.length} OBJEDNÁVEK`}
         </div>
       </div>
 
@@ -519,7 +540,7 @@ export default function ProdejSection({
         filters={filters}
         onChange={setFilters}
         profiles={profiles}
-        searchPlaceholder="jméno klienta nebo položka"
+        searchPlaceholder="zákazník, položka nebo číslo objednávky"
         statusLabel="Stav"
         statusOptions={PRODEJ_STATES.filter((s) => s.key !== "storno")}
       />
@@ -527,13 +548,15 @@ export default function ProdejSection({
       <div>
         {visibleProdej.map((r) => {
           const net = netForSale(r);
-          const repairsTotal = r.opravy.reduce((s, x) => s + x.cena, 0);
-          const doplnkyTotal = r.doplnky.reduce((s, x) => s + x.cena, 0);
+          const doplnkyTotal = sum(r.doplnky.map((x) => x.cena));
+          const items = displayItems(r);
           const isEditing = editingId === r.id;
+          const url = trackingUrl(r.dopravce ?? "zasilkovna", r.cislo_zasilky);
           return (
             <div className="sale-card" key={r.id}>
               {isEditing && editForm ? (
                 <>
+                  <div className="entry-form-title">Úprava {orderNumber(r.id)}</div>
                   <div className="prodej-row cols-3">
                     <div className="field">
                       <label>Jméno</label>
@@ -548,77 +571,74 @@ export default function ProdejSection({
                       <input type="text" value={editForm.klient_email} onChange={(e) => setEditForm({ ...editForm, klient_email: e.target.value })} />
                     </div>
                   </div>
-                  <div className="prodej-row cols-1" style={{ marginTop: 12 }}>
-                    <div className="field">
+                  <div className="prodej-row cols-3" style={{ marginTop: 12 }}>
+                    <div className="field" style={{ gridColumn: "span 2" }}>
                       <label>Adresa</label>
                       <input type="text" value={editForm.klient_adresa} onChange={(e) => setEditForm({ ...editForm, klient_adresa: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="prodej-row cols-3" style={{ marginTop: 12 }}>
-                    <div className="field">
-                      <label>Položka</label>
-                      <input type="text" value={editForm.polozka} onChange={(e) => setEditForm({ ...editForm, polozka: e.target.value })} />
-                    </div>
-                    <div className="field">
-                      <label>Za kolik jsme prodali</label>
-                      <input type="text" value={editForm.cena} onChange={(e) => setEditForm({ ...editForm, cena: e.target.value })} />
                     </div>
                     <div className="field">
                       <label>Datum</label>
                       <input type="date" value={editForm.datum} onChange={(e) => setEditForm({ ...editForm, datum: e.target.value })} />
                     </div>
                   </div>
+                  <div className="prodej-row cols-2" style={{ marginTop: 12 }}>
+                    <div className="field">
+                      <label>Balné</label>
+                      <input type="text" value={editForm.balne} onChange={(e) => setEditForm({ ...editForm, balne: e.target.value })} />
+                    </div>
+                    <div className="field">
+                      <label>Poštovné</label>
+                      <input type="text" value={editForm.postovne} onChange={(e) => setEditForm({ ...editForm, postovne: e.target.value })} />
+                    </div>
+                  </div>
 
-                  <div className="form-section-label">Opravy před prodejem</div>
-                  <div className="repair-list">
-                    {r.opravy.map((o) => (
-                      <div className="repair-item" key={o.id}>
-                        <input
-                          type="text"
-                          className="plain-input"
-                          style={{ flex: 1 }}
-                          defaultValue={o.popis}
-                          onBlur={(e) => handleUpdateOprava(o.id, e.target.value, String(o.cena))}
-                        />
-                        <input
-                          type="text"
-                          className="plain-input"
-                          style={{ width: 90 }}
-                          defaultValue={o.cena}
-                          onBlur={(e) => handleUpdateOprava(o.id, o.popis, e.target.value)}
-                        />
-                        <button className="r-remove" onClick={() => handleRemoveOprava(o.id)}>
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="repair-add-row">
-                    <input
-                      type="text"
-                      className="plain-input"
-                      value={newOpravaDesc}
-                      onChange={(e) => setNewOpravaDesc(e.target.value)}
-                      placeholder="např. oprava baterky"
-                    />
-                    <input
-                      type="text"
-                      className="plain-input"
-                      value={newOpravaPrice}
-                      onChange={(e) => setNewOpravaPrice(e.target.value)}
-                      placeholder="400"
-                    />
-                    <button className="btn-secondary" onClick={() => handleAddOprava(r.id)}>
-                      + Přidat opravu
-                    </button>
-                  </div>
+                  <div className="form-section-label">Položky (změny cen a přidání/odebrání se ukládají hned)</div>
+                  {r.polozky.length === 0 ? (
+                    <div className="ship-hint">Starší záznam s jednou položkou — cenu položky nelze upravit.</div>
+                  ) : (
+                    <div className="repair-list">
+                      {r.polozky.map((p) => (
+                        <div className="repair-item" key={p.id}>
+                          <div className="r-desc">{p.nakup?.co_koupili ?? "?"}</div>
+                          <input
+                            key={`${p.id}-${p.cena}`}
+                            type="text"
+                            className="plain-input"
+                            style={{ width: 110 }}
+                            defaultValue={p.cena}
+                            onBlur={(e) => parseDigits(e.target.value) !== p.cena && editItemPrice(p.id, e.target.value)}
+                          />
+                          <button className="r-remove" onClick={() => removeItem(r, p.id)}>
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {r.polozky.length > 0 && (
+                    <div className="repair-add-row" style={{ gridTemplateColumns: "1fr 140px auto" }}>
+                      <select className="plain-select" value={editAddSelect} onChange={(e) => setEditAddSelect(e.target.value)}>
+                        <option value="">— přidat položku —</option>
+                        {availableNakup.map((n) => (
+                          <option key={n.id} value={n.id}>
+                            {n.co_koupili} ({formatKc(n.kolik_stalo)})
+                          </option>
+                        ))}
+                      </select>
+                      <input type="text" className="plain-input" value={editAddPrice} onChange={(e) => setEditAddPrice(e.target.value)} placeholder="cena Kč" />
+                      <button className="btn-secondary" onClick={() => addItem(r.id)}>
+                        + Přidat položku
+                      </button>
+                    </div>
+                  )}
+                  {editError && <div className="delete-error" style={{ textAlign: "left", marginTop: 8 }}>{editError}</div>}
 
                   <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8 }}>
                     <button className="btn-secondary" onClick={cancelEdit}>
-                      Zrušit
+                      Zavřít
                     </button>
                     <button className="btn-add" onClick={() => saveEdit(r.id)} disabled={savingEdit}>
-                      Uložit
+                      Uložit údaje
                     </button>
                   </div>
                 </>
@@ -626,14 +646,16 @@ export default function ProdejSection({
                 <>
                   <div className="sale-card-top">
                     <div>
-                      <div className="sale-name">{r.klient_jmeno}</div>
+                      <div className="sale-name">
+                        <span className="order-no">{orderNumber(r.id)}</span> {r.klient_jmeno}
+                      </div>
                       <div className="sale-contact">
                         {formatDate(r.datum)} · {r.klient_adresa || "—"} · {r.klient_telefon || "—"} · {r.klient_email || "—"}
                       </div>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
                       <div className="amount" style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>
-                        {formatKc(r.cena)}
+                        {formatKc(itemsRevenue(r) + doplnkyTotal)}
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <AuthorBadge authorId={r.autor_id} profiles={profiles} />
@@ -642,7 +664,7 @@ export default function ProdejSection({
                         </button>
                       </div>
                       <DeleteButton
-                        hint={`Položka se vrátí zpět do Nákupu${r.doplnky.length > 0 ? " a doplňky z prodeje na sklad" : ""}.`}
+                        hint={`Položky se vrátí zpět do Nákupu${r.doplnky.length > 0 ? " a doplňky z objednávky na sklad" : ""}.`}
                         onDelete={async () => {
                           await deleteProdej(r.id);
                           await load();
@@ -651,16 +673,27 @@ export default function ProdejSection({
                       />
                     </div>
                   </div>
-                  <div className="sale-item">{r.polozka}</div>
-                  <div className="sale-contact" style={{ marginTop: 4 }}>
-                    koupeno od: <b style={{ color: "var(--text)", fontWeight: 600 }}>{r.nakup?.dodavatel_jmeno || "—"}</b> za{" "}
-                    {formatKc(r.nakup?.kolik_stalo ?? 0)}
-                  </div>
-                  <div className="sale-repairs" style={{ marginTop: 8 }}>
-                    {r.opravy.length ? r.opravy.map((o) => `${o.popis} — ${formatKc(o.cena)}`).join(", ") : "žádné opravy"}
+
+                  <div className="order-items" style={{ marginTop: 10 }}>
+                    <div className="order-item head view">
+                      <div>Položka</div>
+                      <div>Náklad (nákup + dílna)</div>
+                      <div className="amount">Prodáno za</div>
+                      <div className="amount">Zisk</div>
+                    </div>
+                    {items.map((i, idx) => (
+                      <div className="order-item view" key={i.id ?? idx}>
+                        <div className="who">{i.name}</div>
+                        <div className="todo-meta">
+                          {formatKc(i.nakupCena)} + {formatKc(i.dilna)} = <b>{formatKc(i.cost)}</b>
+                        </div>
+                        <div className="amount">{formatKc(i.cena)}</div>
+                        <div className={`amount ${i.cena - i.cost >= 0 ? "profit-pos" : "profit-neg"}`}>{formatKc(i.cena - i.cost)}</div>
+                      </div>
+                    ))}
                   </div>
                   {r.doplnky.length > 0 && (
-                    <div className="sale-repairs" style={{ marginTop: 6, color: "var(--text)" }}>
+                    <div className="sale-repairs" style={{ marginTop: 8, color: "var(--text)" }}>
                       doplňkový prodej:{" "}
                       <span style={{ color: "var(--muted)" }}>{r.doplnky.map((d) => `${d.polozka} × ${d.pocet_ks} ks — ${formatKc(d.cena)}`).join(", ")}</span>
                     </div>
@@ -670,43 +703,35 @@ export default function ProdejSection({
 
               <div className="summary-box" style={{ marginTop: 12 }}>
                 <div className="summary-row">
-                  <span>Za kolik jsme prodali</span>
-                  <b>{formatKc(r.cena)}</b>
+                  <span>Prodali jsme za (položky)</span>
+                  <b>{formatKc(itemsRevenue(r))}</b>
                 </div>
                 <div className="summary-row">
                   <span>+ Doplňkový prodej</span>
                   <b>{formatKc(doplnkyTotal)}</b>
                 </div>
                 <div className="summary-row dim">
-                  <span>− Nákupní cena (od dodavatele)</span>
-                  <b>{formatKc(r.nakup?.kolik_stalo ?? 0)}</b>
-                </div>
-                <div className="summary-row dim">
-                  <span>− Opravy před prodejem</span>
-                  <b>{formatKc(repairsTotal)}</b>
+                  <span>− Náklad položek (nákup + dílna)</span>
+                  <b>{formatKc(totalCost(r))}</b>
                 </div>
                 <div className="summary-row dim">
                   <span>− Balné a poštovné</span>
-                  <b>{FEE_BALENE + FEE_POSTOVNE} Kč</b>
+                  <b>{formatKc(feesOf(r))}</b>
                 </div>
                 <div className="summary-row total">
-                  <span>Marže (100%)</span>
+                  <span>Zisk</span>
                   <b className={net >= 0 ? "profit-pos" : "profit-neg"}>{formatKc(net)}</b>
                 </div>
               </div>
 
-              <div className="prodej-row cols-3" style={{ marginTop: 10 }}>
+              <div className="prodej-row cols-2" style={{ marginTop: 10 }}>
                 <div className="fee-chip">
-                  <span className="fee-label">Vrátit do firmy 80%</span>
-                  <span className="fee-value">{formatKc(Math.round(net * 0.8))}</span>
+                  <span className="fee-label">Vrátit do firmy (nákupní ceny)</span>
+                  <span className="fee-value">{formatKc(returnToFirm(r))}</span>
                 </div>
                 <div className="fee-chip">
-                  <span className="fee-label">CEO 12%</span>
-                  <span className="fee-value">{formatKc(Math.round(net * 0.12))}</span>
-                </div>
-                <div className="fee-chip">
-                  <span className="fee-label">Zástupce 8%</span>
-                  <span className="fee-value">{formatKc(Math.round(net * 0.08))}</span>
+                  <span className="fee-label">Zisk po všech nákladech</span>
+                  <span className={`fee-value ${net >= 0 ? "profit-pos" : "profit-neg"}`}>{formatKc(net)}</span>
                 </div>
               </div>
 
@@ -729,10 +754,7 @@ export default function ProdejSection({
                   <div className="ship-block">
                     <div className="field">
                       <label>Dopravce</label>
-                      <select
-                        value={r.dopravce ?? "zasilkovna"}
-                        onChange={(e) => saveProdejField(r.id, { dopravce: e.target.value })}
-                      >
+                      <select value={r.dopravce ?? "zasilkovna"} onChange={(e) => saveProdejField(r.id, { dopravce: e.target.value })}>
                         {DOPRAVCI.map((d) => (
                           <option key={d.key} value={d.key}>
                             {d.label}
@@ -753,21 +775,14 @@ export default function ProdejSection({
                         }}
                       />
                     </div>
-                    {trackingUrl(r.dopravce ?? "zasilkovna", r.cislo_zasilky) && (
-                      <a
-                        className="btn-secondary track-link"
-                        href={trackingUrl(r.dopravce ?? "zasilkovna", r.cislo_zasilky) ?? undefined}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
+                    {url && (
+                      <a className="btn-secondary track-link" href={url} target="_blank" rel="noopener noreferrer">
                         Sledovat zásilku ↗
                       </a>
                     )}
                   </div>
                 )}
-                {r.stav === "odeslano" && !r.cislo_zasilky && (
-                  <div className="ship-hint">Zásilka je odeslaná, ale chybí číslo zásilky.</div>
-                )}
+                {r.stav === "odeslano" && !r.cislo_zasilky && <div className="ship-hint">Zásilka je odeslaná, ale chybí číslo zásilky.</div>}
 
                 {REASON_STATES.includes(r.stav) && (
                   <div className="field">
@@ -782,9 +797,7 @@ export default function ProdejSection({
                         if (v !== (r.duvod_vraceni ?? null)) saveProdejField(r.id, { duvod_vraceni: v });
                       }}
                     />
-                    {r.stav === "vraceno" && (
-                      <div className="ship-hint">Vrácená položka se objevila zpět v Nákupu a lze ji znovu nabídnout k prodeji.</div>
-                    )}
+                    {r.stav === "vraceno" && <div className="ship-hint">Vrácené položky se objevily zpět v Nákupu a lze je znovu nabídnout k prodeji.</div>}
                   </div>
                 )}
 
@@ -793,15 +806,17 @@ export default function ProdejSection({
             </div>
           );
         })}
-        {!loading && prodejList.length === 0 && <div className="stock-empty">Zatím žádné prodeje.</div>}
-        {!loading && prodejList.length > 0 && visibleProdej.length === 0 && (
-          <div className="stock-empty">Žádný prodej neodpovídá filtru.</div>
-        )}
+        {!loading && prodejList.length === 0 && <div className="stock-empty">Zatím žádné objednávky.</div>}
+        {!loading && prodejList.length > 0 && visibleProdej.length === 0 && <div className="stock-empty">Žádná objednávka neodpovídá filtru.</div>}
       </div>
 
       <div className="total-row">
-        <span>Celkový čistý zisk{filtered ? " (podle filtru)" : ""}</span>
+        <span>Celkový zisk (zaplacené){filtered ? " — podle filtru" : ""}</span>
         <b>{formatKc(totalNet)}</b>
+      </div>
+      <div className="total-row" style={{ marginTop: 0 }}>
+        <span>Vráceno do firmy (nákupní ceny zaplacených){filtered ? " — podle filtru" : ""}</span>
+        <b>{formatKc(totalReturn)}</b>
       </div>
     </div>
   );

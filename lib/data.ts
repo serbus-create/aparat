@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
-import { FEE_BALENE, FEE_POSTOVNE, fazeLabel, stavLabel, dopravceLabel } from "@/lib/labels";
+import { FEE_BALENE, FEE_POSTOVNE, fazeLabel, stavLabel, dopravceLabel, dilnaTypLabel } from "@/lib/labels";
 import { formatKc, formatDate } from "@/lib/format";
 import type {
   Profile,
@@ -8,7 +8,8 @@ import type {
   NakupPoznamka,
   Prodej,
   ProdejStav,
-  ProdejOprava,
+  ProdejPolozka,
+  DilnaNaklad,
   ProdejDoplnek,
   DoplnkyNakup,
   DoplnkyProdej,
@@ -43,7 +44,16 @@ const PRODEJ_LABELS: FieldLabels = {
   datum: { label: "Datum", fmt: (v) => formatDate(String(v)) },
   dopravce: { label: "Dopravce", fmt: (v) => dopravceLabel(String(v)) },
   cislo_zasilky: { label: "Číslo zásilky" },
+  balne: { label: "Balné", fmt: (v) => formatKc(Number(v)) },
+  postovne: { label: "Poštovné", fmt: (v) => formatKc(Number(v)) },
   duvod_vraceni: { label: "Důvod" },
+};
+const DILNA_LABELS: FieldLabels = {
+  typ: { label: "Typ", fmt: (v) => dilnaTypLabel(String(v)) },
+  popis: { label: "Popis" },
+  cena: { label: "Cena", fmt: (v) => formatKc(Number(v)) },
+  datum: { label: "Datum", fmt: (v) => formatDate(String(v)) },
+  dorazilo: { label: "Dorazilo", fmt: (v) => (v ? "ano" : "ne") },
 };
 const DOPLNKY_LABELS: FieldLabels = {
   polozka: { label: "Položka" },
@@ -118,14 +128,20 @@ export async function fetchProfiles(): Promise<Profile[]> {
 // is not storno/vráceno references it. We never delete nakup rows so storno or a
 // return can bring the item back into Nákup.
 export async function fetchActiveNakup(): Promise<Nakup[]> {
-  const [{ data: nakupData, error: nakupErr }, { data: soldIds, error: soldErr }] =
-    await Promise.all([
-      supabase.from("nakup").select("*").order("datum", { ascending: false }).order("created_at", { ascending: false }),
-      supabase.from("prodej").select("nakup_id").not("stav", "in", "(storno,vraceno)"),
-    ]);
+  const [{ data: nakupData, error: nakupErr }, { data: prodejRows, error: prodejErr }, { data: polozkyRows }] = await Promise.all([
+    supabase.from("nakup").select("*").order("datum", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("prodej").select("id, nakup_id, stav"),
+    // tabulka vznikne až migrací; bez ní bereme prázdný seznam
+    supabase.from("prodej_polozky").select("prodej_id, nakup_id"),
+  ]);
   if (nakupErr) throw nakupErr;
-  if (soldErr) throw soldErr;
-  const soldSet = new Set((soldIds ?? []).map((r) => r.nakup_id));
+  if (prodejErr) throw prodejErr;
+  const released = new Set(["storno", "vraceno"]);
+  const live = (prodejRows ?? []).filter((p) => !released.has(p.stav as string));
+  const liveIds = new Set(live.map((p) => p.id as number));
+  const soldSet = new Set<number>();
+  live.forEach((p) => p.nakup_id != null && soldSet.add(p.nakup_id as number));
+  (polozkyRows ?? []).forEach((x) => liveIds.has(x.prodej_id as number) && soldSet.add(x.nakup_id as number));
   return (nakupData as Nakup[]).filter((n) => !soldSet.has(n.id));
 }
 
@@ -187,24 +203,84 @@ export async function updateNakup(
   }
 }
 
-// Položku z Nákupu nelze smazat, pokud k ní existuje záznam v Prodeji.
+// Položku z Nákupu nelze smazat, pokud je v nějaké objednávce (Prodej).
+// Náklady v dílně a poznámky se smažou spolu s ní.
 export async function deleteNakup(id: number): Promise<void> {
-  const { data: linked, error: linkErr } = await supabase
-    .from("prodej")
-    .select("id, klient_jmeno, stav")
-    .eq("nakup_id", id)
-    .limit(1);
-  if (linkErr) throw linkErr;
-  if (linked && linked.length > 0) {
-    const p = linked[0] as { klient_jmeno: string };
+  const [{ data: legacy, error: legacyErr }, { data: items }] = await Promise.all([
+    supabase.from("prodej").select("klient_jmeno").eq("nakup_id", id).limit(1),
+    supabase.from("prodej_polozky").select("prodej_id").eq("nakup_id", id).limit(1),
+  ]);
+  if (legacyErr) throw legacyErr;
+  let klient: string | null = legacy && legacy.length > 0 ? (legacy[0] as { klient_jmeno: string }).klient_jmeno : null;
+  if (!klient && items && items.length > 0) {
+    const { data: pr } = await supabase.from("prodej").select("klient_jmeno").eq("id", (items[0] as { prodej_id: number }).prodej_id).single();
+    klient = (pr as { klient_jmeno: string } | null)?.klient_jmeno ?? "?";
+  }
+  if (klient) {
     throw new Error(
-      `Tuto položku nelze smazat, protože k ní existuje záznam v Prodeji (klient: ${p.klient_jmeno}). Nejdřív smažte nebo stornujte ten prodej.`
+      `Tuto položku nelze smazat, protože je v objednávce v Prodeji (klient: ${klient}). Nejdřív tu objednávku nebo položku smažte či stornujte.`
     );
   }
   const { data: row } = await supabase.from("nakup").select("co_koupili").eq("id", id).single();
   const { error } = await supabase.from("nakup").delete().eq("id", id);
   if (error) throw error;
-  await logChange("nakup", id, (row as { co_koupili: string } | null)?.co_koupili ?? `#${id}`, "Nákup smazán");
+  await logChange("nakup", id, (row as { co_koupili: string } | null)?.co_koupili ?? `#${id}`, "Nákup smazán (včetně nákladů v dílně)");
+}
+
+// ---------------------------------------------------------------------------
+// Dílna — náklady na položku
+// ---------------------------------------------------------------------------
+
+export async function fetchDilnaNaklady(): Promise<DilnaNaklad[]> {
+  const { data, error } = await supabase.from("dilna_naklady").select("*").order("created_at", { ascending: true });
+  if (error) throw error;
+  return data as DilnaNaklad[];
+}
+
+export async function addDilnaNaklad(input: {
+  nakup_id: number;
+  typ: DilnaNaklad["typ"];
+  popis: string;
+  cena: number;
+  datum: string | null;
+  dorazilo: boolean;
+  autor_id: string | null;
+}): Promise<void> {
+  const { error } = await supabase.from("dilna_naklady").insert(input);
+  if (error) throw error;
+  const { data } = await supabase.from("nakup").select("co_koupili, fase").eq("id", input.nakup_id).single();
+  const n = data as { co_koupili: string; fase: NakupFase } | null;
+  await logChange("nakup", input.nakup_id, n?.co_koupili ?? `#${input.nakup_id}`, `Dílna: přidán náklad „${input.popis}“ (${formatKc(input.cena)})`);
+  // první náklad = položka je v dílně
+  if (n?.fase === "nakoupeno") await setNakupFase(input.nakup_id, "servisovano");
+}
+
+export async function updateDilnaNaklad(
+  id: number,
+  fields: Partial<{ typ: DilnaNaklad["typ"]; popis: string; cena: number; datum: string | null; dorazilo: boolean }>
+): Promise<void> {
+  const { data: before } = await supabase.from("dilna_naklady").select("*").eq("id", id).single();
+  const { error } = await supabase.from("dilna_naklady").update(fields).eq("id", id);
+  if (error) throw error;
+  if (before) {
+    const b = before as DilnaNaklad;
+    const lines = diffLines(b, fields, DILNA_LABELS);
+    if (lines.length) {
+      const { data: n } = await supabase.from("nakup").select("co_koupili").eq("id", b.nakup_id).single();
+      await logChange("nakup", b.nakup_id, (n as { co_koupili: string } | null)?.co_koupili ?? `#${b.nakup_id}`, `Dílna: „${b.popis}“ — ${lines.join("; ")}`);
+    }
+  }
+}
+
+export async function deleteDilnaNaklad(id: number): Promise<void> {
+  const { data: before } = await supabase.from("dilna_naklady").select("*").eq("id", id).single();
+  const { error } = await supabase.from("dilna_naklady").delete().eq("id", id);
+  if (error) throw error;
+  if (before) {
+    const b = before as DilnaNaklad;
+    const { data: n } = await supabase.from("nakup").select("co_koupili").eq("id", b.nakup_id).single();
+    await logChange("nakup", b.nakup_id, (n as { co_koupili: string } | null)?.co_koupili ?? `#${b.nakup_id}`, `Dílna: smazán náklad „${b.popis}“ (${formatKc(b.cena)})`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -238,72 +314,118 @@ export async function deleteNakupPoznamka(id: number): Promise<void> {
 // Prodej
 // ---------------------------------------------------------------------------
 
-export interface ProdejFull extends Prodej {
-  opravy: ProdejOprava[];
-  doplnky: ProdejDoplnek[];
+export interface ProdejPolozkaFull extends ProdejPolozka {
   nakup: Nakup | null;
+  naklady: DilnaNaklad[];
+}
+
+// Objednávka zákazníka: jedna nebo víc položek (foťák, repráky…) + doplňky ze skladu.
+export interface ProdejFull extends Prodej {
+  doplnky: ProdejDoplnek[];
+  polozky: ProdejPolozkaFull[];
+  nakup: Nakup | null; // jen starší záznamy s jednou položkou
+}
+
+export const orderNumber = (id: number): string => `OBJ-${String(id).padStart(4, "0")}`;
+
+const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
+
+// Celkový náklad položky = nákupní cena + vše z dílny.
+export const itemCost = (p: ProdejPolozkaFull): number => (p.nakup?.kolik_stalo ?? 0) + sum(p.naklady.map((x) => x.cena));
+
+export function itemsRevenue(r: ProdejFull): number {
+  return r.polozky.length ? sum(r.polozky.map((p) => p.cena)) : r.cena;
+}
+
+export function totalCost(r: ProdejFull): number {
+  return r.polozky.length ? sum(r.polozky.map(itemCost)) : r.nakup?.kolik_stalo ?? 0;
+}
+
+// Kolik se z objednávky vrací do firmy: nákupní ceny prodaných položek,
+// ať je z čeho koupit další zboží.
+export function returnToFirm(r: ProdejFull): number {
+  return r.polozky.length ? sum(r.polozky.map((p) => p.nakup?.kolik_stalo ?? 0)) : r.nakup?.kolik_stalo ?? 0;
+}
+
+export function feesOf(r: ProdejFull): number {
+  return (r.balne ?? FEE_BALENE) + (r.postovne ?? FEE_POSTOVNE);
 }
 
 export function netForSale(r: ProdejFull): number {
-  const repairsTotal = r.opravy.reduce((s, x) => s + x.cena, 0);
-  const doplnkyTotal = r.doplnky.reduce((s, x) => s + x.cena, 0);
-  const originalCost = r.nakup?.kolik_stalo ?? 0;
-  return r.cena + doplnkyTotal - repairsTotal - FEE_BALENE - FEE_POSTOVNE - originalCost;
+  return itemsRevenue(r) + sum(r.doplnky.map((x) => x.cena)) - totalCost(r) - feesOf(r);
 }
 
 export async function fetchProdej(): Promise<ProdejFull[]> {
-  const [{ data: prodejData, error: prodejErr }, { data: opravyData, error: opravyErr }, { data: doplnkyData, error: doplnkyErr }, { data: nakupData, error: nakupErr }] =
-    await Promise.all([
-      supabase.from("prodej").select("*").order("created_at", { ascending: false }),
-      supabase.from("prodej_opravy").select("*"),
-      supabase.from("prodej_doplnky").select("*"),
-      supabase.from("nakup").select("*"),
-    ]);
-  if (prodejErr) throw prodejErr;
-  if (opravyErr) throw opravyErr;
-  if (doplnkyErr) throw doplnkyErr;
-  if (nakupErr) throw nakupErr;
+  const [prodejRes, doplnkyRes, nakupRes, polozkyRes, nakladyRes] = await Promise.all([
+    supabase.from("prodej").select("*").order("created_at", { ascending: false }),
+    supabase.from("prodej_doplnky").select("*"),
+    supabase.from("nakup").select("*"),
+    supabase.from("prodej_polozky").select("*"),
+    supabase.from("dilna_naklady").select("*"),
+  ]);
+  if (prodejRes.error) throw prodejRes.error;
+  if (doplnkyRes.error) throw doplnkyRes.error;
+  if (nakupRes.error) throw nakupRes.error;
+  // tabulky z migrace; bez nich pracujeme se starším tvarem záznamu
+  const polozky = (polozkyRes.error ? [] : polozkyRes.data) as ProdejPolozka[];
+  const naklady = (nakladyRes.error ? [] : nakladyRes.data) as DilnaNaklad[];
 
-  const nakupById = new Map((nakupData as Nakup[]).map((n) => [n.id, n]));
+  const nakupById = new Map((nakupRes.data as Nakup[]).map((n) => [n.id, n]));
 
-  return (prodejData as Prodej[]).map((p) => ({
+  return (prodejRes.data as Prodej[]).map((p) => ({
     ...p,
-    opravy: (opravyData as ProdejOprava[]).filter((o) => o.prodej_id === p.id),
-    doplnky: (doplnkyData as ProdejDoplnek[]).filter((d) => d.prodej_id === p.id),
+    balne: p.balne ?? FEE_BALENE,
+    postovne: p.postovne ?? FEE_POSTOVNE,
+    doplnky: (doplnkyRes.data as ProdejDoplnek[]).filter((d) => d.prodej_id === p.id),
+    polozky: polozky
+      .filter((x) => x.prodej_id === p.id)
+      .map((x) => ({
+        ...x,
+        nakup: nakupById.get(x.nakup_id) ?? null,
+        naklady: naklady.filter((n) => n.nakup_id === x.nakup_id),
+      })),
     nakup: p.nakup_id ? nakupById.get(p.nakup_id) ?? null : null,
   }));
 }
 
 export interface NewProdejInput {
-  nakup_id: number;
   klient_jmeno: string;
   klient_telefon: string | null;
   klient_email: string | null;
   klient_adresa: string | null;
-  polozka: string;
-  cena: number;
   datum: string | null;
+  balne: number;
+  postovne: number;
   autor_id: string | null;
-  opravy: { popis: string; cena: number }[];
+  polozky: { nakup_id: number; cena: number; nazev: string }[];
   doplnky: { polozka: string; pocet_ks: number; cena: number }[];
 }
 
+const summaryName = (names: string[]) => names.join(" + ");
+
 export async function addProdej(input: NewProdejInput): Promise<Prodej> {
-  const { opravy, doplnky, ...prodejFields } = input;
+  const { polozky, doplnky, ...prodejFields } = input;
 
   const { data: prodej, error: prodejErr } = await supabase
     .from("prodej")
-    .insert({ ...prodejFields, stav: "inzerovano" })
+    .insert({
+      ...prodejFields,
+      polozka: summaryName(polozky.map((x) => x.nazev)),
+      cena: sum(polozky.map((x) => x.cena)),
+      stav: "zamluveno",
+    })
     .select()
     .single();
   if (prodejErr) throw prodejErr;
   const prodejRow = prodej as Prodej;
 
-  if (opravy.length) {
-    const { error } = await supabase
-      .from("prodej_opravy")
-      .insert(opravy.map((o) => ({ ...o, prodej_id: prodejRow.id })));
-    if (error) throw error;
+  const { error: polErr } = await supabase
+    .from("prodej_polozky")
+    .insert(polozky.map((x) => ({ prodej_id: prodejRow.id, nakup_id: x.nakup_id, cena: x.cena })));
+  if (polErr) {
+    // bez položek by zůstala prázdná objednávka — raději ji hned smažeme
+    await supabase.from("prodej").delete().eq("id", prodejRow.id);
+    throw polErr;
   }
 
   if (doplnky.length) {
@@ -326,24 +448,81 @@ export async function addProdej(input: NewProdejInput): Promise<Prodej> {
     if (logErr) throw logErr;
   }
 
-  await logChange("prodej", prodejRow.id, prodejRow.polozka, `Prodej vytvořen (${formatKc(prodejRow.cena)}, klient ${prodejRow.klient_jmeno})`);
+  await logChange(
+    "prodej",
+    prodejRow.id,
+    `${orderNumber(prodejRow.id)} ${prodejRow.polozka}`,
+    `Objednávka vytvořena (${polozky.length} ks, ${formatKc(prodejRow.cena)}, klient ${prodejRow.klient_jmeno})`
+  );
   return prodejRow;
+}
+
+// Souhrnný název a cena objednávky se drží i v tabulce prodej (hledání, seznamy).
+async function recalcProdej(prodejId: number): Promise<void> {
+  const { data } = await supabase.from("prodej_polozky").select("cena, nakup:nakup_id(co_koupili)").eq("prodej_id", prodejId);
+  const rows = (data ?? []) as unknown as { cena: number; nakup: { co_koupili: string } | { co_koupili: string }[] | null }[];
+  if (!rows.length) return;
+  const nameOf = (n: { co_koupili: string } | { co_koupili: string }[] | null) => (Array.isArray(n) ? n[0]?.co_koupili : n?.co_koupili) ?? "?";
+  await supabase
+    .from("prodej")
+    .update({ polozka: summaryName(rows.map((r) => nameOf(r.nakup))), cena: sum(rows.map((r) => r.cena)) })
+    .eq("id", prodejId);
+}
+
+async function orderLabel(prodejId: number): Promise<string> {
+  const { data } = await supabase.from("prodej").select("polozka").eq("id", prodejId).single();
+  return `${orderNumber(prodejId)} ${(data as { polozka: string } | null)?.polozka ?? ""}`.trim();
+}
+
+export async function addProdejPolozka(prodejId: number, nakupId: number, cena: number): Promise<void> {
+  const { error } = await supabase.from("prodej_polozky").insert({ prodej_id: prodejId, nakup_id: nakupId, cena });
+  if (error) throw error;
+  await recalcProdej(prodejId);
+  const { data: n } = await supabase.from("nakup").select("co_koupili").eq("id", nakupId).single();
+  await logChange("prodej", prodejId, await orderLabel(prodejId), `Přidána položka ${(n as { co_koupili: string } | null)?.co_koupili ?? ""} (${formatKc(cena)})`);
+}
+
+export async function updateProdejPolozka(id: number, cena: number): Promise<void> {
+  const { data: before } = await supabase.from("prodej_polozky").select("*, nakup:nakup_id(co_koupili)").eq("id", id).single();
+  const { error } = await supabase.from("prodej_polozky").update({ cena }).eq("id", id);
+  if (error) throw error;
+  const b = before as unknown as (ProdejPolozka & { nakup: { co_koupili: string } | { co_koupili: string }[] | null }) | null;
+  if (b) {
+    await recalcProdej(b.prodej_id);
+    if (b.cena !== cena) {
+      const name = (Array.isArray(b.nakup) ? b.nakup[0]?.co_koupili : b.nakup?.co_koupili) ?? "";
+      await logChange("prodej", b.prodej_id, await orderLabel(b.prodej_id), `Cena položky ${name}: ${formatKc(b.cena)} → ${formatKc(cena)}`);
+    }
+  }
+}
+
+export async function deleteProdejPolozka(id: number): Promise<void> {
+  const { data: before } = await supabase.from("prodej_polozky").select("*, nakup:nakup_id(co_koupili)").eq("id", id).single();
+  const { error } = await supabase.from("prodej_polozky").delete().eq("id", id);
+  if (error) throw error;
+  const b = before as unknown as (ProdejPolozka & { nakup: { co_koupili: string } | { co_koupili: string }[] | null }) | null;
+  if (b) {
+    await recalcProdej(b.prodej_id);
+    const name = (Array.isArray(b.nakup) ? b.nakup[0]?.co_koupili : b.nakup?.co_koupili) ?? "";
+    await logChange("prodej", b.prodej_id, await orderLabel(b.prodej_id), `Položka ${name} odebrána z objednávky — vrací se do Nákupu`);
+  }
 }
 
 export async function setProdejStav(id: number, stav: ProdejStav): Promise<void> {
   const { data: before } = await supabase.from("prodej").select("stav, polozka").eq("id", id).single();
   const b = before as { stav: ProdejStav; polozka: string } | null;
+  const label = b ? `${orderNumber(id)} ${b.polozka}` : `#${id}`;
   if (stav === "storno") {
-    // Deleting the prodej row (cascades to opravy/doplnky and the linked
-    // doplňky sales log) brings the nakup item back into Nákup.
+    // Deleting the prodej row (cascades to položky, doplňky and the linked
+    // doplňky sales log) brings the nakup items back into Nákup.
     const { error } = await supabase.from("prodej").delete().eq("id", id);
     if (error) throw error;
-    await logChange("prodej", id, b?.polozka ?? `#${id}`, "Storno — položka vrácena do Nákupu, doplňky zpět na sklad");
+    await logChange("prodej", id, label, "Storno — položky vráceny do Nákupu, doplňky zpět na sklad");
     return;
   }
   const { error } = await supabase.from("prodej").update({ stav }).eq("id", id);
   if (error) throw error;
-  if (b && b.stav !== stav) await logChange("prodej", id, b.polozka, `Stav: ${stavLabel(b.stav)} → ${stavLabel(stav)}`);
+  if (b && b.stav !== stav) await logChange("prodej", id, label, `Stav: ${stavLabel(b.stav)} → ${stavLabel(stav)}`);
 }
 
 export async function updateProdej(
@@ -353,12 +532,12 @@ export async function updateProdej(
     klient_telefon: string | null;
     klient_email: string | null;
     klient_adresa: string | null;
-    polozka: string;
-    cena: number;
     datum: string | null;
     dopravce: string | null;
     cislo_zasilky: string | null;
     duvod_vraceni: string | null;
+    balne: number;
+    postovne: number;
   }>
 ): Promise<void> {
   const { data: before } = await supabase.from("prodej").select("*").eq("id", id).single();
@@ -366,32 +545,22 @@ export async function updateProdej(
   if (error) throw error;
   if (before) {
     const lines = diffLines(before, fields, PRODEJ_LABELS);
-    if (lines.length) await logChange("prodej", id, (before as Prodej).polozka, `Upraveno — ${lines.join("; ")}`);
+    if (lines.length) await logChange("prodej", id, `${orderNumber(id)} ${(before as Prodej).polozka}`, `Upraveno — ${lines.join("; ")}`);
   }
 }
 
-// Smazání prodeje (opravy, doplňky i jejich zápis v logu skladu se smažou
-// kaskádou). Nákupní položka se vrátí zpět do Nákupu — stejně jako při stornu.
+// Smazání objednávky (položky, doplňky i jejich zápis v logu skladu se smažou
+// kaskádou). Nákupní položky se vrátí zpět do Nákupu — stejně jako při stornu.
 export async function deleteProdej(id: number): Promise<void> {
   const { data: row } = await supabase.from("prodej").select("polozka").eq("id", id).single();
   const { error } = await supabase.from("prodej").delete().eq("id", id);
   if (error) throw error;
-  await logChange("prodej", id, (row as { polozka: string } | null)?.polozka ?? `#${id}`, "Prodej smazán — položka vrácena do Nákupu, doplňky zpět na sklad");
-}
-
-export async function addProdejOprava(prodej_id: number, popis: string, cena: number): Promise<void> {
-  const { error } = await supabase.from("prodej_opravy").insert({ prodej_id, popis, cena });
-  if (error) throw error;
-}
-
-export async function updateProdejOprava(id: number, fields: Partial<{ popis: string; cena: number }>): Promise<void> {
-  const { error } = await supabase.from("prodej_opravy").update(fields).eq("id", id);
-  if (error) throw error;
-}
-
-export async function deleteProdejOprava(id: number): Promise<void> {
-  const { error } = await supabase.from("prodej_opravy").delete().eq("id", id);
-  if (error) throw error;
+  await logChange(
+    "prodej",
+    id,
+    `${orderNumber(id)} ${(row as { polozka: string } | null)?.polozka ?? ""}`.trim(),
+    "Objednávka smazána — položky vráceny do Nákupu, doplňky zpět na sklad"
+  );
 }
 
 // ---------------------------------------------------------------------------

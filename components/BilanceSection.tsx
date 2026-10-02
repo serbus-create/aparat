@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Nakup } from "@/lib/database.types";
-import { fetchAllNakup, fetchProdej, netForSale, type ProdejFull } from "@/lib/data";
+import { fetchAllNakup, fetchProdej, netForSale, returnToFirm, type ProdejFull } from "@/lib/data";
 import { formatKc, formatDate } from "@/lib/format";
 import { PAID_STATES } from "@/lib/labels";
 
@@ -65,6 +65,7 @@ export default function BilanceSection({ refreshKey }: { refreshKey: number }) {
   const totalGain = filteredGains.reduce((s, g) => s + g.net, 0);
   const totalLoss = filteredLosses.reduce((s, l) => s + l.nakup.kolik_stalo, 0);
   const balance = totalGain - totalLoss;
+  const totalReturned = filteredGains.reduce((s, g) => s + returnToFirm(g.prodej), 0);
 
   return (
     <div>
@@ -86,7 +87,7 @@ export default function BilanceSection({ refreshKey }: { refreshKey: number }) {
           </select>
         </div>
 
-        <div className="prodej-row cols-3" style={{ marginTop: 18 }}>
+        <div className="prodej-row cols-4" style={{ marginTop: 18 }}>
           <div className="fee-chip">
             <span className="fee-label">Zisk z prodejů</span>
             <span className={`fee-value ${totalGain >= 0 ? "profit-pos" : "profit-neg"}`}>{formatKc(totalGain)}</span>
@@ -98,6 +99,10 @@ export default function BilanceSection({ refreshKey }: { refreshKey: number }) {
           <div className="fee-chip">
             <span className="fee-label">Bilance</span>
             <span className={`fee-value ${balance >= 0 ? "profit-pos" : "profit-neg"}`}>{formatKc(balance)}</span>
+          </div>
+          <div className="fee-chip">
+            <span className="fee-label">Vráceno do firmy</span>
+            <span className="fee-value">{formatKc(totalReturned)}</span>
           </div>
         </div>
       </div>

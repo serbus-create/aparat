@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Profile, Nakup, NakupFase, NakupPoznamka } from "@/lib/database.types";
+import type { Profile, Nakup, NakupFase, NakupPoznamka, DilnaNaklad } from "@/lib/database.types";
 import {
   fetchActiveNakup,
   fetchAllNakup,
@@ -13,6 +13,7 @@ import {
   addNakupPoznamka,
   deleteNakupPoznamka,
   deleteNakup,
+  fetchDilnaNaklady,
 } from "@/lib/data";
 import { formatKc, formatDate, todayISO, parseDigits } from "@/lib/format";
 import AuthorBadge from "@/components/AuthorBadge";
@@ -81,6 +82,7 @@ export default function NakupSection({
   const [activeNakup, setActiveNakup] = useState<Nakup[]>([]);
   const [allNakup, setAllNakup] = useState<Nakup[]>([]);
   const [poznamky, setPoznamky] = useState<NakupPoznamka[]>([]);
+  const [naklady, setNaklady] = useState<DilnaNaklad[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -101,16 +103,18 @@ export default function NakupSection({
 
   async function load() {
     setLoading(true);
-    const [active, all, profs, notes] = await Promise.all([
+    const [active, all, profs, notes, nk] = await Promise.all([
       fetchActiveNakup(),
       fetchAllNakup(),
       fetchProfiles(),
       fetchNakupPoznamky().catch(() => [] as NakupPoznamka[]),
+      fetchDilnaNaklady().catch(() => [] as DilnaNaklad[]),
     ]);
     setActiveNakup(active);
     setAllNakup(all);
     setProfiles(profs);
     setPoznamky(notes);
+    setNaklady(nk);
     setLoading(false);
   }
 
@@ -322,6 +326,8 @@ export default function NakupSection({
             {visibleNakup.map((r) => {
               const isEditing = editingId === r.id;
               const notes = poznamky.filter((p) => p.nakup_id === r.id);
+              const dilna = naklady.filter((x) => x.nakup_id === r.id).reduce((s, x) => s + x.cena, 0);
+              const dilnaCount = naklady.filter((x) => x.nakup_id === r.id).length;
               return (
                 <div className="buy-card" key={r.id}>
                   {isEditing && editForm ? (
@@ -392,6 +398,11 @@ export default function NakupSection({
                             {formatDate(r.datum)} · {r.dodavatel_telefon || "—"} · {r.dodavatel_email || "—"}
                           </div>
                           <div className="buy-item">{r.co_koupili}</div>
+                          {dilnaCount > 0 && (
+                            <div className="sale-contact" style={{ marginTop: 4 }}>
+                              dílna +{formatKc(dilna)} ({dilnaCount}×) → celkem nás stojí <b style={{ color: "var(--text)" }}>{formatKc(r.kolik_stalo + dilna)}</b>
+                            </div>
+                          )}
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
                           <div
@@ -407,7 +418,7 @@ export default function NakupSection({
                             </button>
                           </div>
                           <DeleteButton
-                            hint="Smaže se i celá historie poznámek k této položce."
+                            hint={`Smažou se i poznámky${dilnaCount > 0 ? ` a náklady v dílně (${dilnaCount}×, ${formatKc(dilna)})` : ""} k této položce.`}
                             onDelete={async () => {
                               await deleteNakup(r.id);
                               await load();

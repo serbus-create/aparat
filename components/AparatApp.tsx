@@ -10,10 +10,12 @@ import ProdejSection from "@/components/ProdejSection";
 import DoplnkySection from "@/components/DoplnkySection";
 import PrehledSection from "@/components/PrehledSection";
 import BilanceSection from "@/components/BilanceSection";
+import DilnaSection from "@/components/DilnaSection";
 
-type Mode = "prehled" | "nakup" | "prodej" | "doplnky" | "bilance";
+type Mode = "prehled" | "nakup" | "dilna" | "prodej" | "doplnky" | "bilance";
 
-const MODE_POS: Record<Mode, number> = { prehled: 0, nakup: 1, prodej: 2, doplnky: 3, bilance: 4 };
+const MODE_POS: Record<Mode, number> = { prehled: 0, nakup: 1, dilna: 2, prodej: 3, doplnky: 4, bilance: 5 };
+const MODE_COUNT = Object.keys(MODE_POS).length;
 
 export default function AparatApp({ profile }: { profile: Profile }) {
   const router = useRouter();
@@ -53,7 +55,7 @@ export default function AparatApp({ profile }: { profile: Profile }) {
 
       <div className="lens-toggle-wrap">
         <div className="lens-toggle">
-          <div className={`lens-slider pos-${MODE_POS[mode]}`}></div>
+          <div className="lens-slider" style={{ width: `${100 / MODE_COUNT}%`, transform: `translateX(${MODE_POS[mode] * 100}%)` }}></div>
           <div className={`lens-option ${mode === "prehled" ? "active" : ""}`} onClick={() => setMode("prehled")}>
             Přehled
             <small>co řešit teď</small>
@@ -61,6 +63,10 @@ export default function AparatApp({ profile }: { profile: Profile }) {
           <div className={`lens-option ${mode === "nakup" ? "active" : ""}`} onClick={() => setMode("nakup")}>
             Nákup
             <small>co jsme koupili</small>
+          </div>
+          <div className={`lens-option ${mode === "dilna" ? "active" : ""}`} onClick={() => setMode("dilna")}>
+            Dílna
+            <small>servis a příprava</small>
           </div>
           <div className={`lens-option ${mode === "prodej" ? "active" : ""}`} onClick={() => setMode("prodej")}>
             Prodej
@@ -97,6 +103,17 @@ export default function AparatApp({ profile }: { profile: Profile }) {
             onMutate={bump}
             preselectNakupId={preselectNakupId}
             onPreselectConsumed={() => setPreselectNakupId(null)}
+          />
+        )}
+        {mode === "dilna" && (
+          <DilnaSection
+            profile={profile}
+            refreshKey={refreshKey}
+            onMutate={bump}
+            onGoToProdej={(nakupId) => {
+              setPreselectNakupId(nakupId);
+              setMode("prodej");
+            }}
           />
         )}
         {mode === "doplnky" && <DoplnkySection profile={profile} refreshKey={refreshKey} onMutate={bump} />}

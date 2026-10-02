@@ -1,11 +1,11 @@
-import type { NakupFase, ProdejStav } from "@/lib/database.types";
+import type { DilnaTyp, NakupFase, ProdejStav } from "@/lib/database.types";
 
 export const FEE_BALENE = 59;
 export const FEE_POSTOVNE = 99;
 
 export const NAKUP_PHASES: { key: NakupFase; label: string }[] = [
   { key: "nakoupeno", label: "Nakoupeno" },
-  { key: "servisovano", label: "Servisováno" },
+  { key: "servisovano", label: "V dílně" },
   { key: "pripraveno", label: "Připraveno k prodeji" },
   { key: "nefunkcni", label: "Nefunkční" },
 ];
@@ -51,3 +51,11 @@ export function trackingUrl(dopravce: string | null, cislo: string | null): stri
   if (dopravce === "balikovna") return `https://www.postaonline.cz/trackandtrace/-/zasilka/cislo?parcelNumbers=${encodeURIComponent(id)}`;
   return null;
 }
+
+export const DILNA_TYPY: { key: DilnaTyp; label: string }[] = [
+  { key: "servis", label: "Servis / oprava" },
+  { key: "prislusenstvi", label: "Příslušenství" },
+  { key: "jine", label: "Jiné" },
+];
+
+export const dilnaTypLabel = (key: string): string => DILNA_TYPY.find((t) => t.key === key)?.label ?? key;

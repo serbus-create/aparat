@@ -51,6 +51,8 @@ export interface Prodej {
   dopravce: string | null;
   cislo_zasilky: string | null;
   duvod_vraceni: string | null;
+  balne: number;
+  postovne: number;
   created_at: string;
 }
 
@@ -60,13 +62,6 @@ export interface NakupPoznamka {
   text: string;
   autor_id: string | null;
   created_at: string;
-}
-
-export interface ProdejOprava {
-  id: number;
-  prodej_id: number;
-  popis: string;
-  cena: number;
 }
 
 export interface ProdejDoplnek {
@@ -109,4 +104,27 @@ export interface Historie {
   popis: string;
   autor_id: string | null;
   created_at: string;
+}
+
+export type DilnaTyp = "prislusenstvi" | "servis" | "jine";
+
+// Náklad na položku v dílně (příslušenství, servis…).
+export interface DilnaNaklad {
+  id: number;
+  nakup_id: number;
+  typ: DilnaTyp;
+  popis: string;
+  cena: number;
+  datum: string | null;
+  dorazilo: boolean;
+  autor_id: string | null;
+  created_at: string;
+}
+
+// Jedna položka (foťák, repráky…) v objednávce zákazníka.
+export interface ProdejPolozka {
+  id: number;
+  prodej_id: number;
+  nakup_id: number;
+  cena: number;
 }

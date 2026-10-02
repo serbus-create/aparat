@@ -1,4 +1,4 @@
--- APARAT — migrace 01: e-shopové stavy prodeje, zásilky, vrácení, historie změn
+-- APARAT — migrace 01: e-shopové stavy prodeje, zásilky, vrácení, historie změn, Dílna, objednávky s více položkami
 -- Spusť v Supabase: Dashboard → SQL Editor → New query → vložit a spustit.
 -- Skript je bezpečné pustit opakovaně.
 
@@ -36,3 +36,42 @@ alter table historie enable row level security;
 drop policy if exists "Přihlášení uživatelé vidí historii" on historie;
 create policy "Přihlášení uživatelé vidí historii" on historie
   for all using (auth.uid() is not null);
+
+-- 5) Dílna: náklady na položku (servis, příslušenství…). Smazáním položky z Nákupu se smažou i její náklady.
+create table if not exists dilna_naklady (
+  id bigint generated always as identity primary key,
+  nakup_id bigint not null references nakup(id) on delete cascade,
+  typ text not null default 'jine' check (typ in ('prislusenstvi','servis','jine')),
+  popis text not null,
+  cena numeric(10,2) not null default 0,
+  datum date,
+  dorazilo boolean not null default true,
+  autor_id uuid references profiles(id),
+  created_at timestamptz default now()
+);
+create index if not exists dilna_naklady_nakup_idx on dilna_naklady (nakup_id);
+
+alter table dilna_naklady enable row level security;
+drop policy if exists "Přihlášení uživatelé vidí dílnu" on dilna_naklady;
+create policy "Přihlášení uživatelé vidí dílnu" on dilna_naklady
+  for all using (auth.uid() is not null);
+
+-- 6) Prodej = objednávka zákazníka s více položkami
+create table if not exists prodej_polozky (
+  id bigint generated always as identity primary key,
+  prodej_id bigint not null references prodej(id) on delete cascade,
+  nakup_id bigint not null references nakup(id),
+  cena numeric(10,2) not null default 0
+);
+create index if not exists prodej_polozky_prodej_idx on prodej_polozky (prodej_id);
+create index if not exists prodej_polozky_nakup_idx on prodej_polozky (nakup_id);
+
+alter table prodej_polozky enable row level security;
+drop policy if exists "Přihlášení uživatelé vidí položky prodeje" on prodej_polozky;
+create policy "Přihlášení uživatelé vidí položky prodeje" on prodej_polozky
+  for all using (auth.uid() is not null);
+
+-- balné a poštovné jsou teď u každé objednávky upravitelné
+alter table prodej
+  add column if not exists balne numeric(10,2) not null default 59,
+  add column if not exists postovne numeric(10,2) not null default 99;

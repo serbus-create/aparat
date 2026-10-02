@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Nakup, NakupFase, ProdejStav, DoplnkyNakup, DoplnkyProdej, Historie, Profile } from "@/lib/database.types";
+import type { Nakup, NakupFase, ProdejStav, DoplnkyNakup, DoplnkyProdej, Historie, Profile, DilnaNaklad } from "@/lib/database.types";
 import {
   fetchActiveNakup,
   fetchProdej,
@@ -9,6 +9,8 @@ import {
   fetchDoplnkyProdej,
   fetchProfiles,
   fetchRecentHistorie,
+  fetchDilnaNaklady,
+  returnToFirm,
   computeStock,
   netForSale,
   type ProdejFull,
@@ -17,7 +19,7 @@ import { formatKc, formatDate } from "@/lib/format";
 import { NAKUP_PHASES, PRODEJ_STATES, PAID_STATES } from "@/lib/labels";
 import { authorName, formatStamp } from "@/components/HistoryPanel";
 
-export type OverviewTarget = "nakup" | "prodej" | "doplnky";
+export type OverviewTarget = "nakup" | "dilna" | "prodej" | "doplnky";
 
 const FAZE = NAKUP_PHASES;
 const STAVY = PRODEJ_STATES.filter((st) => st.key !== "storno");
@@ -60,23 +62,26 @@ export default function PrehledSection({
   const [dp, setDp] = useState<DoplnkyProdej[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [recent, setRecent] = useState<Historie[]>([]);
+  const [naklady, setNaklady] = useState<DilnaNaklad[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const [n, p, a, b, profs, hist] = await Promise.all([
+      const [n, p, a, b, profs, hist, nk] = await Promise.all([
         fetchActiveNakup(),
         fetchProdej(),
         fetchDoplnkyNakup(),
         fetchDoplnkyProdej(),
         fetchProfiles(),
         fetchRecentHistorie(15).catch(() => [] as Historie[]),
+        fetchDilnaNaklady().catch(() => [] as DilnaNaklad[]),
       ]);
       if (cancelled) return;
       setProfiles(profs);
       setRecent(hist);
+      setNaklady(nk);
       setNakup(n);
       setProdej(p);
       setDn(a);
@@ -90,7 +95,8 @@ export default function PrehledSection({
 
   const stats = useMemo(() => {
     const frozen = nakup.filter((n) => n.fase !== "nefunkcni");
-    const frozenTotal = frozen.reduce((s, n) => s + n.kolik_stalo, 0);
+    const dilnaOf = (id: number) => naklady.filter((x) => x.nakup_id === id).reduce((s, x) => s + x.cena, 0);
+    const frozenTotal = frozen.reduce((s, n) => s + n.kolik_stalo + dilnaOf(n.id), 0);
     const brokenTotal = nakup.filter((n) => n.fase === "nefunkcni").reduce((s, n) => s + n.kolik_stalo, 0);
 
     const fazeCount = new Map<NakupFase, number>();
@@ -101,6 +107,8 @@ export default function PrehledSection({
     const month = currentMonthKey();
     const soldThisMonth = prodej.filter((r) => PAID_STATES.includes(r.stav) && prodejMonthKey(r) === month);
     const marginThisMonth = soldThisMonth.reduce((s, r) => s + netForSale(r), 0);
+    const returnedThisMonth = soldThisMonth.reduce((s, r) => s + returnToFirm(r), 0);
+    const waitingDelivery = naklady.filter((x) => !x.dorazilo);
 
     const reserved = prodej.filter((r) => r.stav === "zamluveno");
     const toShip = prodej.filter((r) => r.stav === "k_odeslani");
@@ -111,8 +119,8 @@ export default function PrehledSection({
       .filter((x) => x.days > STALE_DAYS)
       .sort((a, b) => b.days - a.days);
 
-    return { frozenTotal, frozenCount: frozen.length, brokenTotal, fazeCount, stavCount, soldThisMonth, marginThisMonth, reserved, toShip, complaints, lowStock, stale };
-  }, [nakup, prodej, dn, dp]);
+    return { frozenTotal, frozenCount: frozen.length, brokenTotal, fazeCount, stavCount, soldThisMonth, marginThisMonth, returnedThisMonth, waitingDelivery, reserved, toShip, complaints, lowStock, stale };
+  }, [nakup, prodej, dn, dp, naklady]);
 
   return (
     <div>
@@ -126,14 +134,19 @@ export default function PrehledSection({
           <div className="stat-label">Zamrzlé ve skladu</div>
           <div className="stat-value">{formatKc(stats.frozenTotal)}</div>
           <div className="stat-sub">
-            {stats.frozenCount} neprodaných položek
+            {stats.frozenCount} neprodaných položek (nákup + dílna)
             {stats.brokenTotal > 0 && <> · nefunkční mimo: {formatKc(stats.brokenTotal)}</>}
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Marže — {monthName()}</div>
           <div className={`stat-value ${stats.marginThisMonth >= 0 ? "profit-pos" : "profit-neg"}`}>{formatKc(stats.marginThisMonth)}</div>
-          <div className="stat-sub">{stats.soldThisMonth.length} prodaných položek tento měsíc</div>
+          <div className="stat-sub">{stats.soldThisMonth.length} zaplacených objednávek tento měsíc</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Vráceno do firmy — {monthName()}</div>
+          <div className="stat-value">{formatKc(stats.returnedThisMonth)}</div>
+          <div className="stat-sub">nákupní ceny prodaných položek</div>
         </div>
       </div>
 
@@ -182,6 +195,23 @@ export default function PrehledSection({
           </div>
         ))}
         {!loading && stats.reserved.length === 0 && <div className="todo-empty">Nic k řešení.</div>}
+      </div>
+
+      <div className="todo-group">
+        <div className="todo-head">
+          <span>Příslušenství čeká na dodání</span>
+          <button className="btn-secondary" onClick={() => onGo("dilna")}>
+            → Dílna
+          </button>
+        </div>
+        {stats.waitingDelivery.map((x) => (
+          <div className="todo-item" key={x.id}>
+            <div className="who">{x.popis}</div>
+            <div className="todo-meta">{nakup.find((n) => n.id === x.nakup_id)?.co_koupili ?? "—"}</div>
+            <div className="amount">{formatKc(x.cena)}</div>
+          </div>
+        ))}
+        {!loading && stats.waitingDelivery.length === 0 && <div className="todo-empty">Nic k řešení.</div>}
       </div>
 
       <ProdejTodo title="Zaplacené, čekají na odeslání" rows={stats.toShip} loading={loading} onGo={onGo} />
