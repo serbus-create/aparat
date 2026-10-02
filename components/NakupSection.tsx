@@ -16,6 +16,8 @@ import {
 } from "@/lib/data";
 import { formatKc, formatDate, todayISO, parseDigits } from "@/lib/format";
 import AuthorBadge from "@/components/AuthorBadge";
+import HistoryPanel from "@/components/HistoryPanel";
+import { NAKUP_PHASES } from "@/lib/labels";
 import DeleteButton from "@/components/DeleteButton";
 import ListFilters, {
   EMPTY_FILTERS,
@@ -25,13 +27,6 @@ import ListFilters, {
   matchesText,
   type Filters,
 } from "@/components/ListFilters";
-
-const NAKUP_PHASES: { key: NakupFase; label: string }[] = [
-  { key: "nakoupeno", label: "Nakoupeno" },
-  { key: "servisovano", label: "Servisováno" },
-  { key: "pripraveno", label: "Připraveno k prodeji" },
-  { key: "nefunkcni", label: "Nefunkční" },
-];
 
 interface Dodavatel {
   key: string;
@@ -473,6 +468,7 @@ export default function NakupSection({
                           + Přidat poznámku
                         </button>
                       </div>
+                      <HistoryPanel entita="nakup" zaznamId={r.id} profiles={profiles} refreshKey={refreshKey} />
                     </>
                   )}
                 </div>

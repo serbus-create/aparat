@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Nakup } from "@/lib/database.types";
 import { fetchAllNakup, fetchProdej, netForSale, type ProdejFull } from "@/lib/data";
 import { formatKc, formatDate } from "@/lib/format";
+import { PAID_STATES } from "@/lib/labels";
 
 function monthKey(dateStr: string): string {
   return dateStr.slice(0, 7); // "YYYY-MM"
@@ -46,7 +47,7 @@ export default function BilanceSection({ refreshKey }: { refreshKey: number }) {
   const gains = useMemo(
     () =>
       prodejList
-        .filter((r) => r.stav === "prodano")
+        .filter((r) => PAID_STATES.includes(r.stav))
         .map((r) => ({ month: monthKey(r.datum || r.created_at), prodej: r, net: netForSale(r) })),
     [prodejList]
   );

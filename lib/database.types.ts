@@ -1,5 +1,16 @@
 export type NakupFase = "nakoupeno" | "servisovano" | "pripraveno" | "nefunkcni";
-export type ProdejStav = "pripraveno" | "inzerovano" | "zamluveno" | "prodano" | "storno";
+export type ProdejStav =
+  | "inzerovano"
+  | "zamluveno"
+  | "zaplaceno"
+  | "k_odeslani"
+  | "odeslano"
+  | "doruceno"
+  | "vraceno"
+  | "reklamace"
+  | "storno";
+
+export type HistorieEntita = "nakup" | "prodej" | "doplnky_nakup" | "doplnky_prodej";
 
 export interface Profile {
   id: string;
@@ -37,6 +48,9 @@ export interface Prodej {
   invoice_vs: string | null;
   invoice_date_issue: string | null;
   invoice_date_due: string | null;
+  dopravce: string | null;
+  cislo_zasilky: string | null;
+  duvod_vraceni: string | null;
   created_at: string;
 }
 
@@ -74,6 +88,7 @@ export interface DoplnkyNakup {
 
 export interface DoplnkyProdej {
   id: number;
+  prodej_id: number | null;
   polozka: string;
   pocet_ks: number;
   cena_celkem: number;
@@ -84,4 +99,14 @@ export interface DoplnkyProdej {
 export interface DoplnkyCena {
   polozka: string;
   cena_za_ks: number;
+}
+
+export interface Historie {
+  id: number;
+  entita: HistorieEntita;
+  zaznam_id: number | null;
+  nazev: string;
+  popis: string;
+  autor_id: string | null;
+  created_at: string;
 }

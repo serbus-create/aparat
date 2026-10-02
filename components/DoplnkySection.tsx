@@ -240,17 +240,23 @@ export default function DoplnkySection({
                   <div className="amount">{formatKc(r.cena_celkem)}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <AuthorBadge authorId={r.autor_id} profiles={profiles} />
-                    <button className="btn-secondary" onClick={() => startEdit(r)}>
-                      Upravit
-                    </button>
-                    <DeleteButton
-                      onDelete={async () => {
-                        if (sub === "kupujeme") await deleteDoplnkyNakup(r.id);
-                        else await deleteDoplnkyProdej(r.id);
-                        await load();
-                        onMutate();
-                      }}
-                    />
+                    {sub === "prodavame" && (r as DoplnkyProdej).prodej_id != null ? (
+                      <span className="linked-note">z prodeje techniky — spravuje se v Prodeji</span>
+                    ) : (
+                      <>
+                        <button className="btn-secondary" onClick={() => startEdit(r)}>
+                          Upravit
+                        </button>
+                        <DeleteButton
+                          onDelete={async () => {
+                            if (sub === "kupujeme") await deleteDoplnkyNakup(r.id);
+                            else await deleteDoplnkyProdej(r.id);
+                            await load();
+                            onMutate();
+                          }}
+                        />
+                      </>
+                    )}
                   </div>
                 </div>
               );

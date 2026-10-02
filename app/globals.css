@@ -1302,3 +1302,83 @@ button {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ---------------- Zásilka, důvod vrácení, historie ---------------- */
+.ship-block {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+.ship-block .field {
+  flex: 1 1 160px;
+}
+.track-link {
+  text-decoration: none;
+  display: inline-block;
+}
+.ship-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.linked-note {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  text-align: right;
+}
+.history-panel {
+  margin-top: 4px;
+}
+.history-toggle {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.history-toggle:hover {
+  color: var(--accent);
+}
+.history-list {
+  margin-top: 6px;
+  border-left: 2px solid var(--border);
+  padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.history-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.history-item.feed {
+  padding: 10px 16px;
+  border-bottom: 1px dashed var(--border);
+}
+.history-item.feed:last-child {
+  border-bottom: none;
+}
+.history-when {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+.history-who {
+  font-family: var(--mono);
+  color: var(--accent);
+}
+.history-what {
+  color: var(--text);
+}
+.history-empty {
+  font-size: 12px;
+  color: var(--muted);
+}

@@ -1,33 +1,26 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Nakup, NakupFase, ProdejStav, DoplnkyNakup, DoplnkyProdej } from "@/lib/database.types";
+import type { Nakup, NakupFase, ProdejStav, DoplnkyNakup, DoplnkyProdej, Historie, Profile } from "@/lib/database.types";
 import {
   fetchActiveNakup,
   fetchProdej,
   fetchDoplnkyNakup,
   fetchDoplnkyProdej,
+  fetchProfiles,
+  fetchRecentHistorie,
   computeStock,
   netForSale,
   type ProdejFull,
 } from "@/lib/data";
 import { formatKc, formatDate } from "@/lib/format";
+import { NAKUP_PHASES, PRODEJ_STATES, PAID_STATES } from "@/lib/labels";
+import { authorName, formatStamp } from "@/components/HistoryPanel";
 
 export type OverviewTarget = "nakup" | "prodej" | "doplnky";
 
-const FAZE: { key: NakupFase; label: string }[] = [
-  { key: "nakoupeno", label: "Nakoupeno" },
-  { key: "servisovano", label: "Servisováno" },
-  { key: "pripraveno", label: "Připraveno k prodeji" },
-  { key: "nefunkcni", label: "Nefunkční" },
-];
-
-const STAVY: { key: ProdejStav; label: string }[] = [
-  { key: "pripraveno", label: "Připraveno" },
-  { key: "inzerovano", label: "Inzerováno" },
-  { key: "zamluveno", label: "Zamluveno" },
-  { key: "prodano", label: "Prodáno" },
-];
+const FAZE = NAKUP_PHASES;
+const STAVY = PRODEJ_STATES.filter((st) => st.key !== "storno");
 
 const STALE_DAYS = 30;
 const LOW_STOCK = 2;
@@ -65,14 +58,25 @@ export default function PrehledSection({
   const [prodej, setProdej] = useState<ProdejFull[]>([]);
   const [dn, setDn] = useState<DoplnkyNakup[]>([]);
   const [dp, setDp] = useState<DoplnkyProdej[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [recent, setRecent] = useState<Historie[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const [n, p, a, b] = await Promise.all([fetchActiveNakup(), fetchProdej(), fetchDoplnkyNakup(), fetchDoplnkyProdej()]);
+      const [n, p, a, b, profs, hist] = await Promise.all([
+        fetchActiveNakup(),
+        fetchProdej(),
+        fetchDoplnkyNakup(),
+        fetchDoplnkyProdej(),
+        fetchProfiles(),
+        fetchRecentHistorie(15).catch(() => [] as Historie[]),
+      ]);
       if (cancelled) return;
+      setProfiles(profs);
+      setRecent(hist);
       setNakup(n);
       setProdej(p);
       setDn(a);
@@ -95,17 +99,19 @@ export default function PrehledSection({
     prodej.forEach((r) => stavCount.set(r.stav, (stavCount.get(r.stav) ?? 0) + 1));
 
     const month = currentMonthKey();
-    const soldThisMonth = prodej.filter((r) => r.stav === "prodano" && prodejMonthKey(r) === month);
+    const soldThisMonth = prodej.filter((r) => PAID_STATES.includes(r.stav) && prodejMonthKey(r) === month);
     const marginThisMonth = soldThisMonth.reduce((s, r) => s + netForSale(r), 0);
 
     const reserved = prodej.filter((r) => r.stav === "zamluveno");
+    const toShip = prodej.filter((r) => r.stav === "k_odeslani");
+    const complaints = prodej.filter((r) => r.stav === "reklamace");
     const lowStock = computeStock(dn, dp).filter((s) => s.remaining <= LOW_STOCK);
     const stale = frozen
       .map((n) => ({ n, days: daysSince(nakupDate(n)) }))
       .filter((x) => x.days > STALE_DAYS)
       .sort((a, b) => b.days - a.days);
 
-    return { frozenTotal, frozenCount: frozen.length, brokenTotal, fazeCount, stavCount, soldThisMonth, marginThisMonth, reserved, lowStock, stale };
+    return { frozenTotal, frozenCount: frozen.length, brokenTotal, fazeCount, stavCount, soldThisMonth, marginThisMonth, reserved, toShip, complaints, lowStock, stale };
   }, [nakup, prodej, dn, dp]);
 
   return (
@@ -161,7 +167,7 @@ export default function PrehledSection({
 
       <div className="todo-group">
         <div className="todo-head">
-          <span>Zamluvené, ještě neprodané</span>
+          <span>Zamluvené, ještě nezaplacené</span>
           <button className="btn-secondary" onClick={() => onGo("prodej")}>
             → Prodej
           </button>
@@ -177,6 +183,9 @@ export default function PrehledSection({
         ))}
         {!loading && stats.reserved.length === 0 && <div className="todo-empty">Nic k řešení.</div>}
       </div>
+
+      <ProdejTodo title="Zaplacené, čekají na odeslání" rows={stats.toShip} loading={loading} onGo={onGo} />
+      <ProdejTodo title="Reklamace" rows={stats.complaints} loading={loading} onGo={onGo} />
 
       <div className="todo-group">
         <div className="todo-head">
@@ -213,6 +222,56 @@ export default function PrehledSection({
         ))}
         {!loading && stats.stale.length === 0 && <div className="todo-empty">Nic k řešení.</div>}
       </div>
+
+      <div className="list-header" style={{ marginTop: 36 }}>
+        <div className="list-title">Poslední změny</div>
+        <div className="list-sub">KDO CO UDĚLAL</div>
+      </div>
+      <div className="todo-group">
+        {recent.map((h) => (
+          <div className="history-item feed" key={h.id}>
+            <span className="history-when">{formatStamp(h.created_at)}</span>
+            <span className="history-who">{authorName(profiles, h.autor_id)}</span>
+            <span className="history-what">
+              <b>{h.nazev}</b> — {h.popis}
+            </span>
+          </div>
+        ))}
+        {!loading && recent.length === 0 && <div className="todo-empty">Zatím žádné zaznamenané změny.</div>}
+      </div>
+    </div>
+  );
+}
+
+function ProdejTodo({
+  title,
+  rows,
+  loading,
+  onGo,
+}: {
+  title: string;
+  rows: ProdejFull[];
+  loading: boolean;
+  onGo: (target: OverviewTarget) => void;
+}) {
+  return (
+    <div className="todo-group">
+      <div className="todo-head">
+        <span>{title}</span>
+        <button className="btn-secondary" onClick={() => onGo("prodej")}>
+          → Prodej
+        </button>
+      </div>
+      {rows.map((r) => (
+        <div className="todo-item" key={r.id}>
+          <div className="who">{r.polozka}</div>
+          <div className="todo-meta">
+            {r.klient_jmeno} · {formatDate(r.datum)}
+          </div>
+          <div className="amount">{formatKc(r.cena)}</div>
+        </div>
+      ))}
+      {!loading && rows.length === 0 && <div className="todo-empty">Nic k řešení.</div>}
     </div>
   );
 }

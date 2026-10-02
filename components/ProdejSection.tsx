@@ -22,9 +22,18 @@ import {
   type ProdejFull,
 } from "@/lib/data";
 import { formatKc, formatDate, parseDigits, todayISO } from "@/lib/format";
-import { FEE_BALENE, FEE_POSTOVNE } from "@/lib/invoice";
+import {
+  FEE_BALENE,
+  FEE_POSTOVNE,
+  PRODEJ_STATES,
+  PAID_STATES,
+  SHIPPING_STATES,
+  REASON_STATES,
+  DOPRAVCI,
+  trackingUrl,
+} from "@/lib/labels";
 import AuthorBadge from "@/components/AuthorBadge";
-import InvoiceModal from "@/components/InvoiceModal";
+import HistoryPanel from "@/components/HistoryPanel";
 import DeleteButton from "@/components/DeleteButton";
 import ListFilters, {
   EMPTY_FILTERS,
@@ -34,14 +43,6 @@ import ListFilters, {
   matchesText,
   type Filters,
 } from "@/components/ListFilters";
-
-const PRODEJ_STATES: { key: ProdejStav; label: string }[] = [
-  { key: "pripraveno", label: "Připraveno" },
-  { key: "inzerovano", label: "Inzerováno" },
-  { key: "zamluveno", label: "Zamluveno" },
-  { key: "prodano", label: "Prodáno" },
-  { key: "storno", label: "Storno" },
-];
 
 interface Repair {
   desc: string;
@@ -83,7 +84,6 @@ export default function ProdejSection({
   const [doplnkyProdej, setDoplnkyProdejState] = useState<DoplnkyProdej[]>([]);
   const [doplnkyCeny, setDoplnkyCeny] = useState<DoplnkyCena[]>([]);
   const [loading, setLoading] = useState(true);
-  const [invoiceTarget, setInvoiceTarget] = useState<ProdejFull | null>(null);
 
   const [klientJmeno, setKlientJmeno] = useState("");
   const [klientTelefon, setKlientTelefon] = useState("");
@@ -215,7 +215,14 @@ export default function ProdejSection({
     }
   }
 
+  async function saveProdejField(id: number, fields: Parameters<typeof updateProdej>[1]) {
+    await updateProdej(id, fields);
+    await load();
+    onMutate();
+  }
+
   async function handleStavClick(id: number, stav: ProdejStav) {
+    if (stav === "storno" && !window.confirm("Opravdu stornovat? Prodej se smaže, položka se vrátí do Nákupu a doplňky na sklad.")) return;
     await setProdejStav(id, stav);
     await load();
     onMutate();
@@ -296,7 +303,7 @@ export default function ProdejSection({
     [prodejList, filters]
   );
   const filtered = filtersActive(filters);
-  const totalNet = visibleProdej.reduce((s, r) => s + netForSale(r), 0);
+  const totalNet = visibleProdej.filter((r) => PAID_STATES.includes(r.stav)).reduce((s, r) => s + netForSale(r), 0);
 
   return (
     <div>
@@ -635,15 +642,7 @@ export default function ProdejSection({
                         </button>
                       </div>
                       <DeleteButton
-                        hint={
-                          [
-                            "Položka se vrátí zpět do Nákupu.",
-                            r.invoice_number ? `Prodej má vystavenou fakturu ${r.invoice_number}.` : null,
-                            r.doplnky.length > 0 ? "Doplňky z tohoto prodeje zůstanou odepsané ze skladu (upravte je v Doplňky → Co prodáváme)." : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" ")
-                        }
+                        hint={`Položka se vrátí zpět do Nákupu${r.doplnky.length > 0 ? " a doplňky z prodeje na sklad" : ""}.`}
                         onDelete={async () => {
                           await deleteProdej(r.id);
                           await load();
@@ -713,23 +712,83 @@ export default function ProdejSection({
 
               <div className="sale-footer" style={{ flexDirection: "column", alignItems: "stretch", gap: 10, marginTop: 14 }}>
                 <div className="stage-pills">
-                  {PRODEJ_STATES.map((s) => (
+                  {PRODEJ_STATES.map((st) => (
                     <div
-                      key={s.key}
-                      className={`stage-pill ${r.stav === s.key ? "active" : ""} ${r.stav === s.key && s.key === "prodano" ? "stav-prodano" : ""} ${
-                        r.stav === s.key && s.key === "storno" ? "stav-storno" : ""
+                      key={st.key}
+                      className={`stage-pill ${r.stav === st.key ? "active" : ""} ${r.stav === st.key && st.key === "doruceno" ? "stav-prodano" : ""} ${
+                        r.stav === st.key && ["vraceno", "reklamace", "storno"].includes(st.key) ? "stav-storno" : ""
                       }`}
-                      onClick={() => handleStavClick(r.id, s.key)}
+                      onClick={() => handleStavClick(r.id, st.key)}
                     >
-                      {s.label}
+                      {st.label}
                     </div>
                   ))}
                 </div>
-                {r.stav === "prodano" && (
-                  <button className="btn-invoice" onClick={() => setInvoiceTarget(r)}>
-                    🧾 Vystavit fakturu
-                  </button>
+
+                {SHIPPING_STATES.includes(r.stav) && (
+                  <div className="ship-block">
+                    <div className="field">
+                      <label>Dopravce</label>
+                      <select
+                        value={r.dopravce ?? "zasilkovna"}
+                        onChange={(e) => saveProdejField(r.id, { dopravce: e.target.value })}
+                      >
+                        {DOPRAVCI.map((d) => (
+                          <option key={d.key} value={d.key}>
+                            {d.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>Číslo zásilky</label>
+                      <input
+                        key={`${r.id}-${r.cislo_zasilky ?? ""}`}
+                        type="text"
+                        defaultValue={r.cislo_zasilky ?? ""}
+                        placeholder="např. Z123456789"
+                        onBlur={(e) => {
+                          const v = e.target.value.trim() || null;
+                          if (v !== (r.cislo_zasilky ?? null)) saveProdejField(r.id, { cislo_zasilky: v });
+                        }}
+                      />
+                    </div>
+                    {trackingUrl(r.dopravce ?? "zasilkovna", r.cislo_zasilky) && (
+                      <a
+                        className="btn-secondary track-link"
+                        href={trackingUrl(r.dopravce ?? "zasilkovna", r.cislo_zasilky) ?? undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Sledovat zásilku ↗
+                      </a>
+                    )}
+                  </div>
                 )}
+                {r.stav === "odeslano" && !r.cislo_zasilky && (
+                  <div className="ship-hint">Zásilka je odeslaná, ale chybí číslo zásilky.</div>
+                )}
+
+                {REASON_STATES.includes(r.stav) && (
+                  <div className="field">
+                    <label>{r.stav === "vraceno" ? "Důvod vrácení" : "Důvod reklamace"}</label>
+                    <input
+                      key={`${r.id}-${r.duvod_vraceni ?? ""}`}
+                      type="text"
+                      defaultValue={r.duvod_vraceni ?? ""}
+                      placeholder="např. nefunguje blesk, nesedí popis"
+                      onBlur={(e) => {
+                        const v = e.target.value.trim() || null;
+                        if (v !== (r.duvod_vraceni ?? null)) saveProdejField(r.id, { duvod_vraceni: v });
+                      }}
+                    />
+                    {r.stav === "vraceno" && (
+                      <div className="ship-hint">Vrácená položka se objevila zpět v Nákupu a lze ji znovu nabídnout k prodeji.</div>
+                    )}
+                  </div>
+                )}
+
+                <HistoryPanel entita="prodej" zaznamId={r.id} profiles={profiles} refreshKey={refreshKey} />
               </div>
             </div>
           );
@@ -744,17 +803,6 @@ export default function ProdejSection({
         <span>Celkový čistý zisk{filtered ? " (podle filtru)" : ""}</span>
         <b>{formatKc(totalNet)}</b>
       </div>
-
-      {invoiceTarget && (
-        <InvoiceModal
-          prodej={invoiceTarget}
-          onClose={() => setInvoiceTarget(null)}
-          onUpdated={(fields) => {
-            setInvoiceTarget((prev) => (prev ? { ...prev, ...fields } : prev));
-            setProdejList((prev) => prev.map((p) => (p.id === invoiceTarget.id ? { ...p, ...fields } : p)));
-          }}
-        />
-      )}
     </div>
   );
 }
