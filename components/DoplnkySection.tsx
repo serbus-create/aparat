@@ -10,12 +10,23 @@ import {
   addDoplnkyProdej,
   updateDoplnkyNakup,
   updateDoplnkyProdej,
+  deleteDoplnkyNakup,
+  deleteDoplnkyProdej,
   setDoplnekCena,
   computeStock,
   fetchProfiles,
 } from "@/lib/data";
 import { formatKc, parseDigits } from "@/lib/format";
 import AuthorBadge from "@/components/AuthorBadge";
+import DeleteButton from "@/components/DeleteButton";
+import ListFilters, {
+  EMPTY_FILTERS,
+  filtersActive,
+  matchesAuthor,
+  matchesDate,
+  matchesText,
+  type Filters,
+} from "@/components/ListFilters";
 
 type Sub = "kupujeme" | "prodavame" | "sklad";
 
@@ -43,6 +54,7 @@ export default function DoplnkySection({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<{ polozka: string; pocet_ks: string; cena_celkem: string } | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
 
   async function load() {
     setLoading(true);
@@ -121,19 +133,31 @@ export default function DoplnkySection({
     }
   }
 
+  function changeSub(next: Sub) {
+    setSub(next);
+    setFilters(EMPTY_FILTERS);
+    setEditingId(null);
+    setEditForm(null);
+  }
+
   const records = sub === "kupujeme" ? kupujeme : sub === "prodavame" ? prodavame : [];
-  const recordsTotal = records.reduce((s, r) => s + r.cena_celkem, 0);
+  const visibleRecords = records.filter(
+    (r) => matchesText(filters, r.polozka) && matchesDate(r.created_at, filters) && matchesAuthor(r.autor_id, filters)
+  );
+  const visibleStock = stock.filter((s) => matchesText(filters, s.name));
+  const filtered = filtersActive(filters);
+  const recordsTotal = visibleRecords.reduce((s, r) => s + r.cena_celkem, 0);
 
   return (
     <div>
       <div className="sub-toggle">
-        <div className={`sub-pill ${sub === "kupujeme" ? "active" : ""}`} onClick={() => setSub("kupujeme")}>
+        <div className={`sub-pill ${sub === "kupujeme" ? "active" : ""}`} onClick={() => changeSub("kupujeme")}>
           Co kupujeme
         </div>
-        <div className={`sub-pill ${sub === "prodavame" ? "active" : ""}`} onClick={() => setSub("prodavame")}>
+        <div className={`sub-pill ${sub === "prodavame" ? "active" : ""}`} onClick={() => changeSub("prodavame")}>
           Co prodáváme
         </div>
-        <div className={`sub-pill ${sub === "sklad" ? "active" : ""}`} onClick={() => setSub("sklad")}>
+        <div className={`sub-pill ${sub === "sklad" ? "active" : ""}`} onClick={() => changeSub("sklad")}>
           Skladové zásoby
         </div>
       </div>
@@ -163,8 +187,12 @@ export default function DoplnkySection({
 
           <div className="list-header">
             <div className="list-title">{sub === "kupujeme" ? "Nákup doplňků" : "Prodej doplňků"}</div>
-            <div className="list-sub">{loading ? "…" : `${records.length} ZÁZNAMŮ`}</div>
+            <div className="list-sub">
+              {loading ? "…" : filtered ? `${visibleRecords.length} Z ${records.length} ZÁZNAMŮ` : `${records.length} ZÁZNAMŮ`}
+            </div>
           </div>
+
+          <ListFilters filters={filters} onChange={setFilters} profiles={profiles} searchPlaceholder="název položky" />
 
           <div className="simple-col-headers">
             <div>Položka</div>
@@ -173,7 +201,7 @@ export default function DoplnkySection({
             <div>Vyplnil</div>
           </div>
           <div>
-            {records.map((r) => {
+            {visibleRecords.map((r) => {
               const isEditing = editingId === r.id;
               if (isEditing && editForm) {
                 return (
@@ -215,15 +243,29 @@ export default function DoplnkySection({
                     <button className="btn-secondary" onClick={() => startEdit(r)}>
                       Upravit
                     </button>
+                    <DeleteButton
+                      onDelete={async () => {
+                        if (sub === "kupujeme") await deleteDoplnkyNakup(r.id);
+                        else await deleteDoplnkyProdej(r.id);
+                        await load();
+                        onMutate();
+                      }}
+                    />
                   </div>
                 </div>
               );
             })}
             {!loading && records.length === 0 && <div className="stock-empty">Zatím žádné záznamy.</div>}
+            {!loading && records.length > 0 && visibleRecords.length === 0 && (
+              <div className="stock-empty">Žádný záznam neodpovídá filtru.</div>
+            )}
           </div>
 
           <div className="total-row">
-            <span>{sub === "kupujeme" ? "Celkem utraceno" : "Celkem utrženo"}</span>
+            <span>
+              {sub === "kupujeme" ? "Celkem utraceno" : "Celkem utrženo"}
+              {filtered ? " (podle filtru)" : ""}
+            </span>
             <b>{formatKc(recordsTotal)}</b>
           </div>
         </>
@@ -233,8 +275,16 @@ export default function DoplnkySection({
         <div>
           <div className="list-header">
             <div className="list-title">Skladové zásoby</div>
-            <div className="list-sub">{stock.length} POLOŽEK</div>
+            <div className="list-sub">{filtered ? `${visibleStock.length} Z ${stock.length} POLOŽEK` : `${stock.length} POLOŽEK`}</div>
           </div>
+          <ListFilters
+            filters={filters}
+            onChange={setFilters}
+            profiles={profiles}
+            searchPlaceholder="název položky"
+            showDate={false}
+            showAuthor={false}
+          />
           <div className="stock-col-headers" style={{ gridTemplateColumns: "1.4fr 0.7fr 0.7fr 0.7fr 0.9fr" }}>
             <div>Položka</div>
             <div className="amount">Koupeno</div>
@@ -243,7 +293,7 @@ export default function DoplnkySection({
             <div className="amount">Cena/ks</div>
           </div>
           <div>
-            {stock.map((s) => {
+            {visibleStock.map((s) => {
               const priceEntry = ceny.find((c) => c.polozka.trim().toLowerCase() === s.name.trim().toLowerCase());
               return (
                 <div className="stock-row" style={{ gridTemplateColumns: "1.4fr 0.7fr 0.7fr 0.7fr 0.9fr" }} key={s.name}>
@@ -264,6 +314,7 @@ export default function DoplnkySection({
               );
             })}
             {stock.length === 0 && <div className="stock-empty">Zatím žádné položky na skladě.</div>}
+            {stock.length > 0 && visibleStock.length === 0 && <div className="stock-empty">Žádná položka neodpovídá hledání.</div>}
           </div>
         </div>
       )}

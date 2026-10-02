@@ -7,6 +7,7 @@ import {
   fetchProdej,
   addProdej,
   setProdejStav,
+  deleteProdej,
   updateProdej,
   addProdejOprava,
   updateProdejOprava,
@@ -24,6 +25,15 @@ import { formatKc, formatDate, parseDigits, todayISO } from "@/lib/format";
 import { FEE_BALENE, FEE_POSTOVNE } from "@/lib/invoice";
 import AuthorBadge from "@/components/AuthorBadge";
 import InvoiceModal from "@/components/InvoiceModal";
+import DeleteButton from "@/components/DeleteButton";
+import ListFilters, {
+  EMPTY_FILTERS,
+  filtersActive,
+  matchesAuthor,
+  matchesDate,
+  matchesText,
+  type Filters,
+} from "@/components/ListFilters";
 
 const PRODEJ_STATES: { key: ProdejStav; label: string }[] = [
   { key: "pripraveno", label: "Připraveno" },
@@ -95,6 +105,7 @@ export default function ProdejSection({
   const [savingEdit, setSavingEdit] = useState(false);
   const [newOpravaDesc, setNewOpravaDesc] = useState("");
   const [newOpravaPrice, setNewOpravaPrice] = useState("");
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
 
   async function load() {
     setLoading(true);
@@ -273,7 +284,19 @@ export default function ProdejSection({
     onMutate();
   }
 
-  const totalNet = prodejList.reduce((s, r) => s + netForSale(r), 0);
+  const visibleProdej = useMemo(
+    () =>
+      prodejList.filter(
+        (r) =>
+          matchesText(filters, r.klient_jmeno, r.polozka) &&
+          (!filters.status || r.stav === filters.status) &&
+          matchesDate(r.datum || r.created_at, filters) &&
+          matchesAuthor(r.autor_id, filters)
+      ),
+    [prodejList, filters]
+  );
+  const filtered = filtersActive(filters);
+  const totalNet = visibleProdej.reduce((s, r) => s + netForSale(r), 0);
 
   return (
     <div>
@@ -480,11 +503,22 @@ export default function ProdejSection({
 
       <div className="list-header">
         <div className="list-title">Prodeje</div>
-        <div className="list-sub">{loading ? "…" : `${prodejList.length} ZÁZNAMŮ`}</div>
+        <div className="list-sub">
+          {loading ? "…" : filtered ? `${visibleProdej.length} Z ${prodejList.length} ZÁZNAMŮ` : `${prodejList.length} ZÁZNAMŮ`}
+        </div>
       </div>
 
+      <ListFilters
+        filters={filters}
+        onChange={setFilters}
+        profiles={profiles}
+        searchPlaceholder="jméno klienta nebo položka"
+        statusLabel="Stav"
+        statusOptions={PRODEJ_STATES.filter((s) => s.key !== "storno")}
+      />
+
       <div>
-        {prodejList.map((r) => {
+        {visibleProdej.map((r) => {
           const net = netForSale(r);
           const repairsTotal = r.opravy.reduce((s, x) => s + x.cena, 0);
           const doplnkyTotal = r.doplnky.reduce((s, x) => s + x.cena, 0);
@@ -600,6 +634,22 @@ export default function ProdejSection({
                           Upravit
                         </button>
                       </div>
+                      <DeleteButton
+                        hint={
+                          [
+                            "Položka se vrátí zpět do Nákupu.",
+                            r.invoice_number ? `Prodej má vystavenou fakturu ${r.invoice_number}.` : null,
+                            r.doplnky.length > 0 ? "Doplňky z tohoto prodeje zůstanou odepsané ze skladu (upravte je v Doplňky → Co prodáváme)." : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" ")
+                        }
+                        onDelete={async () => {
+                          await deleteProdej(r.id);
+                          await load();
+                          onMutate();
+                        }}
+                      />
                     </div>
                   </div>
                   <div className="sale-item">{r.polozka}</div>
@@ -685,10 +735,13 @@ export default function ProdejSection({
           );
         })}
         {!loading && prodejList.length === 0 && <div className="stock-empty">Zatím žádné prodeje.</div>}
+        {!loading && prodejList.length > 0 && visibleProdej.length === 0 && (
+          <div className="stock-empty">Žádný prodej neodpovídá filtru.</div>
+        )}
       </div>
 
       <div className="total-row">
-        <span>Celkový čistý zisk</span>
+        <span>Celkový čistý zisk{filtered ? " (podle filtru)" : ""}</span>
         <b>{formatKc(totalNet)}</b>
       </div>
 

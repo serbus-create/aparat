@@ -93,6 +93,24 @@ export async function updateNakup(
   if (error) throw error;
 }
 
+// Položku z Nákupu nelze smazat, pokud k ní existuje záznam v Prodeji.
+export async function deleteNakup(id: number): Promise<void> {
+  const { data: linked, error: linkErr } = await supabase
+    .from("prodej")
+    .select("id, klient_jmeno, stav")
+    .eq("nakup_id", id)
+    .limit(1);
+  if (linkErr) throw linkErr;
+  if (linked && linked.length > 0) {
+    const p = linked[0] as { klient_jmeno: string };
+    throw new Error(
+      `Tuto položku nelze smazat, protože k ní existuje záznam v Prodeji (klient: ${p.klient_jmeno}). Nejdřív smažte nebo stornujte ten prodej.`
+    );
+  }
+  const { error } = await supabase.from("nakup").delete().eq("id", id);
+  if (error) throw error;
+}
+
 // ---------------------------------------------------------------------------
 // Nákup — ruční poznámky
 // ---------------------------------------------------------------------------
@@ -241,6 +259,13 @@ export async function updateProdej(
   if (error) throw error;
 }
 
+// Smazání prodeje (opravy a doplňky se smažou kaskádou). Nákupní položka
+// se tím vrátí zpět do Nákupu — stejně jako při stornu.
+export async function deleteProdej(id: number): Promise<void> {
+  const { error } = await supabase.from("prodej").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function addProdejOprava(prodej_id: number, popis: string, cena: number): Promise<void> {
   const { error } = await supabase.from("prodej_opravy").insert({ prodej_id, popis, cena });
   if (error) throw error;
@@ -333,6 +358,35 @@ export async function updateDoplnkyProdej(
   fields: Partial<{ polozka: string; pocet_ks: number; cena_celkem: number }>
 ): Promise<void> {
   const { error } = await supabase.from("doplnky_prodej").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+// Smazání nákupu doplňku nesmí způsobit záporný stav skladu.
+export async function deleteDoplnkyNakup(id: number): Promise<void> {
+  const [{ data: row, error: rowErr }, { data: bought, error: bErr }, { data: sold, error: sErr }] = await Promise.all([
+    supabase.from("doplnky_nakup").select("*").eq("id", id).single(),
+    supabase.from("doplnky_nakup").select("polozka, pocet_ks"),
+    supabase.from("doplnky_prodej").select("polozka, pocet_ks"),
+  ]);
+  if (rowErr) throw rowErr;
+  if (bErr) throw bErr;
+  if (sErr) throw sErr;
+  const target = row as DoplnkyNakup;
+  const key = target.polozka.trim().toLowerCase();
+  const sum = (rows: { polozka: string; pocet_ks: number }[]) =>
+    rows.filter((r) => r.polozka.trim().toLowerCase() === key).reduce((s, r) => s + r.pocet_ks, 0);
+  const remainingAfter = sum(bought as { polozka: string; pocet_ks: number }[]) - target.pocet_ks - sum(sold as { polozka: string; pocet_ks: number }[]);
+  if (remainingAfter < 0) {
+    throw new Error(
+      `Tento nákup nelze smazat: ${target.polozka} už z něj bylo prodáno, po smazání by na skladě zbylo ${remainingAfter} ks. Nejdřív upravte nebo smažte odpovídající prodej.`
+    );
+  }
+  const { error } = await supabase.from("doplnky_nakup").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteDoplnkyProdej(id: number): Promise<void> {
+  const { error } = await supabase.from("doplnky_prodej").delete().eq("id", id);
   if (error) throw error;
 }
 

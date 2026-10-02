@@ -1221,3 +1221,84 @@ button {
     text-align: left;
   }
 }
+
+/* ---------------- Filtry a mazání ---------------- */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.filter-bar .field {
+  flex: 1 1 130px;
+  min-width: 120px;
+}
+.filter-bar .filter-search {
+  flex: 2 1 220px;
+}
+.filter-reset {
+  align-self: flex-end;
+}
+.btn-secondary.danger:hover {
+  border-color: var(--loss);
+  color: var(--loss);
+}
+.btn-danger {
+  background: var(--loss);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 9px 14px;
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.delete-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 340px;
+}
+.delete-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.delete-question {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--loss);
+}
+.delete-hint {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  line-height: 1.5;
+}
+.delete-error {
+  font-size: 12px;
+  color: var(--loss);
+  text-align: right;
+  line-height: 1.5;
+}
+.simple-record > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}

@@ -12,9 +12,19 @@ import {
   fetchNakupPoznamky,
   addNakupPoznamka,
   deleteNakupPoznamka,
+  deleteNakup,
 } from "@/lib/data";
 import { formatKc, formatDate, todayISO, parseDigits } from "@/lib/format";
 import AuthorBadge from "@/components/AuthorBadge";
+import DeleteButton from "@/components/DeleteButton";
+import ListFilters, {
+  EMPTY_FILTERS,
+  filtersActive,
+  matchesAuthor,
+  matchesDate,
+  matchesText,
+  type Filters,
+} from "@/components/ListFilters";
 
 const NAKUP_PHASES: { key: NakupFase; label: string }[] = [
   { key: "nakoupeno", label: "Nakoupeno" },
@@ -92,6 +102,7 @@ export default function NakupSection({
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
 
   async function load() {
     setLoading(true);
@@ -217,7 +228,19 @@ export default function NakupSection({
     });
   }
 
-  const totalCost = activeNakup.reduce((s, r) => s + r.kolik_stalo, 0);
+  const visibleNakup = useMemo(
+    () =>
+      activeNakup.filter(
+        (n) =>
+          matchesText(filters, n.dodavatel_jmeno, n.co_koupili) &&
+          (!filters.status || n.fase === filters.status) &&
+          matchesDate(n.datum || n.created_at, filters) &&
+          matchesAuthor(n.autor_id, filters)
+      ),
+    [activeNakup, filters]
+  );
+  const filtered = filtersActive(filters);
+  const totalCost = visibleNakup.reduce((s, r) => s + r.kolik_stalo, 0);
 
   return (
     <div>
@@ -286,11 +309,22 @@ export default function NakupSection({
 
           <div className="list-header">
             <div className="list-title">Nákupy</div>
-            <div className="list-sub">{loading ? "…" : `${activeNakup.length} ZÁZNAMŮ`}</div>
+            <div className="list-sub">
+              {loading ? "…" : filtered ? `${visibleNakup.length} Z ${activeNakup.length} ZÁZNAMŮ` : `${activeNakup.length} ZÁZNAMŮ`}
+            </div>
           </div>
 
+          <ListFilters
+            filters={filters}
+            onChange={setFilters}
+            profiles={profiles}
+            searchPlaceholder="jméno dodavatele nebo položka"
+            statusLabel="Fáze"
+            statusOptions={NAKUP_PHASES}
+          />
+
           <div>
-            {activeNakup.map((r) => {
+            {visibleNakup.map((r) => {
               const isEditing = editingId === r.id;
               const notes = poznamky.filter((p) => p.nakup_id === r.id);
               return (
@@ -377,6 +411,14 @@ export default function NakupSection({
                               Upravit
                             </button>
                           </div>
+                          <DeleteButton
+                            hint="Smaže se i celá historie poznámek k této položce."
+                            onDelete={async () => {
+                              await deleteNakup(r.id);
+                              await load();
+                              onMutate();
+                            }}
+                          />
                         </div>
                       </div>
                       <div className="buy-footer">
@@ -437,10 +479,13 @@ export default function NakupSection({
               );
             })}
             {!loading && activeNakup.length === 0 && <div className="stock-empty">Zatím žádné nákupy.</div>}
+            {!loading && activeNakup.length > 0 && visibleNakup.length === 0 && (
+              <div className="stock-empty">Žádný nákup neodpovídá filtru.</div>
+            )}
           </div>
 
           <div className="total-row">
-            <span>Celkem investováno do nákupu</span>
+            <span>Celkem investováno do nákupu{filtered ? " (podle filtru)" : ""}</span>
             <b>{formatKc(totalCost)}</b>
           </div>
         </>
