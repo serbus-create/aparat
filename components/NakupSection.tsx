@@ -407,7 +407,7 @@ export default function NakupSection({
                             <div className="repair-item" key={n.id}>
                               <div className="r-desc">
                                 {n.text}
-                                <span style={{ color: "var(--gray-2)", marginLeft: 8, fontFamily: "var(--mono)", fontSize: 11 }}>
+                                <span style={{ color: "var(--muted)", marginLeft: 8, fontFamily: "var(--mono)", fontSize: 11 }}>
                                   {new Date(n.created_at).toLocaleDateString("cs-CZ")} ·{" "}
                                   {profiles.find((p) => p.id === n.autor_id)?.full_name || "—"}
                                 </span>

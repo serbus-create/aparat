@@ -98,9 +98,9 @@ export default function InvoiceModal({
 
         <div className="invoice-col-line" style={{ marginBottom: 10 }}>
           Datum vystavení:{" "}
-          <b style={{ fontFamily: "var(--mono)", color: "#000" }}>{issueDate ? formatDateCZ(new Date(issueDate)) : "—"}</b> · Datum
-          splatnosti: <b style={{ fontFamily: "var(--mono)", color: "#000" }}>{dueDate ? formatDateCZ(new Date(dueDate)) : "—"}</b> ·
-          Variabilní symbol: <b style={{ fontFamily: "var(--mono)", color: "#000" }}>{invoiceVs}</b>
+          <b style={{ fontFamily: "var(--mono)", color: "var(--ink)" }}>{issueDate ? formatDateCZ(new Date(issueDate)) : "—"}</b> · Datum
+          splatnosti: <b style={{ fontFamily: "var(--mono)", color: "var(--ink)" }}>{dueDate ? formatDateCZ(new Date(dueDate)) : "—"}</b> ·
+          Variabilní symbol: <b style={{ fontFamily: "var(--mono)", color: "var(--ink)" }}>{invoiceVs}</b>
         </div>
 
         <table className="invoice-table">

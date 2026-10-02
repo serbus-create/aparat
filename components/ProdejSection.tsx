@@ -394,7 +394,7 @@ export default function ProdejSection({
           <div className="sale-fees" style={{ marginTop: 8 }}>
             cena za ks {formatKc(Math.round(doplnekUnitPrice))} · celkem {formatKc(doplnekPreviewTotal)}
             {doplnekStockRow && doplnekQtyNum > doplnekStockRow.remaining && (
-              <span style={{ color: "var(--red)" }}> · pozor, na skladě je jen {doplnekStockRow.remaining} ks</span>
+              <span style={{ color: "var(--loss)" }}> · pozor, na skladě je jen {doplnekStockRow.remaining} ks</span>
             )}
           </div>
         )}
@@ -604,16 +604,16 @@ export default function ProdejSection({
                   </div>
                   <div className="sale-item">{r.polozka}</div>
                   <div className="sale-contact" style={{ marginTop: 4 }}>
-                    koupeno od: <b style={{ color: "var(--gray-1)", fontWeight: 600 }}>{r.nakup?.dodavatel_jmeno || "—"}</b> za{" "}
+                    koupeno od: <b style={{ color: "var(--text)", fontWeight: 600 }}>{r.nakup?.dodavatel_jmeno || "—"}</b> za{" "}
                     {formatKc(r.nakup?.kolik_stalo ?? 0)}
                   </div>
                   <div className="sale-repairs" style={{ marginTop: 8 }}>
                     {r.opravy.length ? r.opravy.map((o) => `${o.popis} — ${formatKc(o.cena)}`).join(", ") : "žádné opravy"}
                   </div>
                   {r.doplnky.length > 0 && (
-                    <div className="sale-repairs" style={{ marginTop: 6, color: "var(--gray-1)" }}>
+                    <div className="sale-repairs" style={{ marginTop: 6, color: "var(--text)" }}>
                       doplňkový prodej:{" "}
-                      <span style={{ color: "var(--gray-2)" }}>{r.doplnky.map((d) => `${d.polozka} × ${d.pocet_ks} ks — ${formatKc(d.cena)}`).join(", ")}</span>
+                      <span style={{ color: "var(--muted)" }}>{r.doplnky.map((d) => `${d.polozka} × ${d.pocet_ks} ks — ${formatKc(d.cena)}`).join(", ")}</span>
                     </div>
                   )}
                 </>

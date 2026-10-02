@@ -109,7 +109,7 @@ export default function PrehledSection({ refreshKey }: { refreshKey: number }) {
             <div className="simple-record" key={g.prodej.id} style={{ gridTemplateColumns: "0.8fr 1.3fr 1fr 0.8fr" }}>
               <div className="qty">{formatDate(g.prodej.datum)}</div>
               <div className="who">{g.prodej.polozka}</div>
-              <div style={{ color: "var(--gray-2)", fontSize: 13 }}>{g.prodej.klient_jmeno}</div>
+              <div style={{ color: "var(--muted)", fontSize: 13 }}>{g.prodej.klient_jmeno}</div>
               <div className={`amount ${g.net >= 0 ? "profit-pos" : "profit-neg"}`}>{formatKc(g.net)}</div>
             </div>
           ))}
@@ -126,7 +126,7 @@ export default function PrehledSection({ refreshKey }: { refreshKey: number }) {
             <div className="simple-record" key={l.nakup.id} style={{ gridTemplateColumns: "0.8fr 1.3fr 1fr 0.8fr" }}>
               <div className="qty">{formatDate(l.nakup.datum)}</div>
               <div className="who">{l.nakup.co_koupili}</div>
-              <div style={{ color: "var(--gray-2)", fontSize: 13 }}>{l.nakup.dodavatel_jmeno}</div>
+              <div style={{ color: "var(--muted)", fontSize: 13 }}>{l.nakup.dodavatel_jmeno}</div>
               <div className="amount profit-neg">−{formatKc(l.nakup.kolik_stalo)}</div>
             </div>
           ))}

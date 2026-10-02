@@ -1,12 +1,23 @@
 :root {
-  --black: #0a0a0a;
-  --white: #ffffff;
-  --red: #e8302a;
-  --green: #6fcf5c;
-  --gray-1: #d8d8d8;
-  --gray-2: #8c8c8c;
-  --gray-3: #333333;
-  --gray-4: #1a1a1a;
+  --accent: #a78bdb;
+  --accent-dark: #7c5cc4;
+  --on-accent: #14101c;
+  --bg: #14101c;
+  --card: #1d1828;
+  --border: #2e2640;
+  --text: #f4f0fa;
+  --muted: #9a90b0;
+  --profit: #6fcf5c;
+  --loss: #e8302a;
+  --overlay: rgba(20, 16, 28, 0.78);
+  /* faktura = tištěný bílý doklad */
+  --paper: #ffffff;
+  --ink: #14101c;
+  --ink-soft: #444444;
+  --ink-muted: #666666;
+  --ink-faint: #999999;
+  --paper-line: #dddddd;
+  --paper-line-soft: #eeeeee;
   --mono: var(--font-mono), monospace;
   --sans: var(--font-sans), sans-serif;
 }
@@ -19,8 +30,8 @@
 
 html,
 body {
-  background: var(--black);
-  color: var(--white);
+  background: var(--bg);
+  color: var(--text);
   font-family: var(--sans);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -40,7 +51,7 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: 14px 28px;
-  border-bottom: 1px solid var(--gray-3);
+  border-bottom: 1px solid var(--border);
 }
 .brand {
   display: flex;
@@ -51,18 +62,18 @@ button {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--red);
-  box-shadow: 0 0 8px var(--red);
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
 }
 .brand-name {
   font-family: var(--mono);
   letter-spacing: 0.12em;
   font-size: 13px;
   text-transform: uppercase;
-  color: var(--gray-1);
+  color: var(--text);
 }
 .brand-name b {
-  color: var(--white);
+  color: var(--text);
 }
 
 .topbar-right {
@@ -79,15 +90,15 @@ button {
   border-radius: 999px;
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--black);
-  background: var(--white);
+  color: var(--bg);
+  background: var(--text);
 }
 .avatar {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: var(--black);
-  color: var(--white);
+  background: var(--bg);
+  color: var(--text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -98,8 +109,8 @@ button {
 
 .btn-logout {
   background: transparent;
-  color: var(--gray-2);
-  border: 1px solid var(--gray-3);
+  color: var(--muted);
+  border: 1px solid var(--border);
   border-radius: 999px;
   padding: 7px 14px;
   font-family: var(--sans);
@@ -108,8 +119,8 @@ button {
   cursor: pointer;
 }
 .btn-logout:hover {
-  color: var(--white);
-  border-color: var(--gray-1);
+  color: var(--text);
+  border-color: var(--text);
 }
 
 /* ---------------- Lens toggle ---------------- */
@@ -117,12 +128,12 @@ button {
   display: flex;
   justify-content: center;
   padding: 32px 20px 28px;
-  background: radial-gradient(ellipse at center, rgba(232, 48, 42, 0.06) 0%, transparent 70%);
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--accent) 6%, transparent) 0%, transparent 70%);
 }
 .lens-toggle {
   position: relative;
   display: flex;
-  border: 1px solid var(--gray-3);
+  border: 1px solid var(--border);
   border-radius: 100px;
   overflow: hidden;
   width: 720px;
@@ -139,7 +150,7 @@ button {
   cursor: pointer;
   position: relative;
   z-index: 2;
-  color: var(--gray-2);
+  color: var(--muted);
   transition: color 0.2s ease;
   background: none;
   border: none;
@@ -150,11 +161,11 @@ button {
   text-transform: none;
   letter-spacing: 0;
   font-size: 10px;
-  color: var(--gray-2);
+  color: var(--muted);
   margin-top: 2px;
 }
 .lens-option.active {
-  color: var(--white);
+  color: var(--text);
 }
 .lens-slider {
   position: absolute;
@@ -162,7 +173,7 @@ button {
   left: 0;
   width: 25%;
   height: 100%;
-  background: var(--red);
+  background: var(--accent-dark);
   border-radius: 100px;
   z-index: 1;
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -192,15 +203,15 @@ button {
   letter-spacing: 0.06em;
   padding: 9px 18px;
   border-radius: 999px;
-  border: 1px solid var(--gray-3);
-  color: var(--gray-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
   cursor: pointer;
   background: none;
 }
 .sub-pill.active {
-  background: var(--white);
-  color: var(--black);
-  border-color: var(--white);
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
 }
 
 .wrap {
@@ -211,18 +222,18 @@ button {
 
 /* ---------------- Forms ---------------- */
 .entry-form {
-  border: 1px solid var(--gray-3);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 22px 24px;
   margin-bottom: 32px;
-  background: var(--gray-4);
+  background: var(--card);
 }
 .entry-form-title {
   font-family: var(--mono);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--gray-2);
+  color: var(--muted);
   margin-bottom: 16px;
 }
 .form-section-label {
@@ -230,14 +241,14 @@ button {
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--gray-2);
+  color: var(--muted);
   margin: 18px 0 8px;
 }
 .form-section-label:first-of-type {
   margin-top: 0;
 }
 .form-section-label span {
-  color: var(--gray-2);
+  color: var(--muted);
   text-transform: none;
   letter-spacing: 0;
 }
@@ -248,7 +259,7 @@ button {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--gray-2);
+  color: var(--muted);
   margin-bottom: 6px;
 }
 .field input,
@@ -256,11 +267,11 @@ button {
 .plain-input,
 .plain-select {
   width: 100%;
-  background: var(--black);
-  border: 1px solid var(--gray-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 12px;
-  color: var(--white);
+  color: var(--text);
   font-family: var(--sans);
   font-size: 14px;
 }
@@ -269,15 +280,15 @@ button {
 .plain-input:focus,
 .plain-select:focus {
   outline: none;
-  border-color: var(--red);
+  border-color: var(--accent);
 }
 .field input::placeholder,
 .plain-input::placeholder {
-  color: var(--gray-3);
+  color: var(--border);
 }
 
 .summary-box {
-  border: 1px solid var(--gray-3);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 6px 16px;
 }
@@ -286,36 +297,36 @@ button {
   justify-content: space-between;
   align-items: center;
   padding: 10px 0;
-  border-bottom: 1px dashed var(--gray-3);
+  border-bottom: 1px dashed var(--border);
   font-size: 14px;
 }
 .summary-row:last-child {
   border-bottom: none;
 }
 .summary-row span {
-  color: var(--gray-1);
+  color: var(--text);
 }
 .summary-row b {
   font-family: var(--mono);
   font-weight: 700;
 }
 .summary-row.dim span {
-  color: var(--gray-2);
+  color: var(--muted);
   font-size: 13px;
 }
 .summary-row.dim b {
-  color: var(--gray-2);
+  color: var(--muted);
   font-weight: 500;
   font-size: 13px;
 }
 .summary-row.total {
-  border-top: 1px solid var(--gray-3);
+  border-top: 1px solid var(--border);
   border-bottom: none;
   margin-top: 4px;
   padding-top: 14px;
 }
 .summary-row.total span {
-  color: var(--white);
+  color: var(--text);
   font-weight: 600;
 }
 .summary-row.total b {
@@ -323,10 +334,10 @@ button {
 }
 
 .profit-pos {
-  color: var(--green);
+  color: var(--profit);
 }
 .profit-neg {
-  color: var(--red);
+  color: var(--loss);
 }
 
 .author-badge {
@@ -337,9 +348,9 @@ button {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--gray-2);
-  background: var(--gray-4);
-  border: 1px solid var(--gray-3);
+  color: var(--muted);
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: 999px;
   padding: 3px 9px 3px 5px;
   white-space: nowrap;
@@ -348,19 +359,19 @@ button {
   width: 15px;
   height: 15px;
   border-radius: 50%;
-  background: var(--gray-3);
+  background: var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 8px;
   font-weight: 700;
-  color: var(--white);
+  color: var(--text);
 }
 
 .btn-invoice {
   background: transparent;
-  color: var(--white);
-  border: 1px solid var(--white);
+  color: var(--accent);
+  border: 1px solid var(--accent);
   border-radius: 6px;
   padding: 8px 14px;
   font-family: var(--sans);
@@ -371,8 +382,8 @@ button {
 }
 
 .btn-add {
-  background: var(--red);
-  color: var(--white);
+  background: var(--accent);
+  color: var(--on-accent);
   border: none;
   border-radius: 6px;
   padding: 11px 20px;
@@ -388,8 +399,8 @@ button {
 }
 .btn-secondary {
   background: transparent;
-  color: var(--gray-1);
-  border: 1px solid var(--gray-3);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 9px 14px;
   font-family: var(--sans);
@@ -399,8 +410,8 @@ button {
   white-space: nowrap;
 }
 .btn-transfer {
-  background: var(--white);
-  color: var(--black);
+  background: var(--text);
+  color: var(--bg);
   border: none;
   border-radius: 6px;
   padding: 9px 16px;
@@ -440,21 +451,21 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--black);
-  border: 1px solid var(--gray-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 12px;
   font-family: var(--mono);
   font-size: 13px;
 }
 .fee-chip .fee-label {
-  color: var(--gray-2);
+  color: var(--muted);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 .fee-chip .fee-value {
-  color: var(--white);
+  color: var(--text);
   font-weight: 700;
 }
 
@@ -466,20 +477,20 @@ button {
   align-items: center;
   gap: 10px;
   padding: 8px 0;
-  border-bottom: 1px dashed var(--gray-3);
+  border-bottom: 1px dashed var(--border);
   font-size: 13px;
 }
 .repair-item .r-desc {
   flex: 1;
-  color: var(--gray-1);
+  color: var(--text);
 }
 .repair-item .r-price {
   font-family: var(--mono);
-  color: var(--gray-2);
+  color: var(--muted);
 }
 .repair-item .r-remove {
   cursor: pointer;
-  color: var(--red);
+  color: var(--loss);
   font-family: var(--mono);
   font-size: 14px;
   background: none;
@@ -512,7 +523,7 @@ button {
 .list-sub {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--gray-2);
+  color: var(--muted);
 }
 
 .stock-col-headers {
@@ -523,8 +534,8 @@ button {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--gray-2);
-  border-bottom: 1px solid var(--gray-3);
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
 }
 .stock-col-headers .amount {
   text-align: right;
@@ -534,22 +545,22 @@ button {
   gap: 12px;
   align-items: center;
   padding: 14px 4px;
-  border-bottom: 1px solid var(--gray-3);
+  border-bottom: 1px solid var(--border);
 }
 .price-input {
   width: 100%;
-  background: var(--black);
-  border: 1px solid var(--gray-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 7px 10px;
-  color: var(--white);
+  color: var(--text);
   font-family: var(--mono);
   font-size: 13px;
   text-align: right;
 }
 .price-input:focus {
   outline: none;
-  border-color: var(--red);
+  border-color: var(--accent);
 }
 .stock-row .amount {
   font-family: var(--mono);
@@ -558,16 +569,16 @@ button {
   text-align: right;
 }
 .stock-row .amount.dim {
-  color: var(--gray-2);
+  color: var(--muted);
   font-weight: 500;
 }
 .stock-row .amount.low {
-  color: var(--red);
+  color: var(--loss);
 }
 .stock-empty {
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--gray-2);
+  color: var(--muted);
   padding: 20px 4px;
 }
 
@@ -591,8 +602,8 @@ button {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--gray-2);
-  border-bottom: 1px solid var(--gray-3);
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
 }
 .simple-col-headers .amount {
   text-align: right;
@@ -603,7 +614,7 @@ button {
   gap: 12px;
   align-items: center;
   padding: 14px 4px;
-  border-bottom: 1px solid var(--gray-3);
+  border-bottom: 1px solid var(--border);
 }
 .simple-record .amount {
   font-family: var(--mono);
@@ -613,7 +624,7 @@ button {
 }
 .simple-record .qty {
   font-family: var(--mono);
-  color: var(--gray-2);
+  color: var(--muted);
   font-size: 14px;
 }
 .simple-record .who {
@@ -623,7 +634,7 @@ button {
 
 /* Nákup: karty */
 .buy-card {
-  border: 1px solid var(--gray-3);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 18px 20px;
   margin-bottom: 12px;
@@ -641,7 +652,7 @@ button {
 }
 .buy-item {
   font-size: 14px;
-  color: var(--gray-1);
+  color: var(--text);
   margin-top: 2px;
 }
 .buy-footer {
@@ -652,7 +663,7 @@ button {
   gap: 10px;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px dashed var(--gray-3);
+  border-top: 1px dashed var(--border);
 }
 
 .stage-pills {
@@ -667,34 +678,34 @@ button {
   letter-spacing: 0.04em;
   padding: 6px 11px;
   border-radius: 999px;
-  border: 1px solid var(--gray-3);
-  color: var(--gray-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
   cursor: pointer;
   transition: all 0.12s ease;
   background: transparent;
 }
 .stage-pill:hover {
-  border-color: var(--gray-1);
-  color: var(--gray-1);
+  border-color: var(--text);
+  color: var(--text);
 }
 .stage-pill.active {
-  background: var(--red);
-  border-color: var(--red);
-  color: var(--white);
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+  color: var(--text);
 }
 .stage-pill.active.stav-prodano {
-  background: var(--green);
-  border-color: var(--green);
-  color: var(--black);
+  background: var(--profit);
+  border-color: var(--profit);
+  color: var(--bg);
 }
 .stage-pill.active.stav-storno {
   background: transparent;
-  border-color: var(--red);
-  color: var(--red);
+  border-color: var(--loss);
+  color: var(--loss);
 }
 
 .sale-card {
-  border: 1px solid var(--gray-3);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 18px 20px;
   margin-bottom: 12px;
@@ -713,18 +724,18 @@ button {
 .sale-contact {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--gray-2);
+  color: var(--muted);
   margin-top: 3px;
 }
 .sale-item {
   font-size: 14px;
-  color: var(--gray-1);
+  color: var(--text);
   margin: 10px 0 4px;
 }
 .sale-repairs {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--gray-2);
+  color: var(--muted);
   line-height: 1.7;
 }
 .sale-footer {
@@ -733,19 +744,19 @@ button {
   align-items: center;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px dashed var(--gray-3);
+  border-top: 1px dashed var(--border);
 }
 
 /* Dodavatelé */
 .dodavatel-card {
-  border-bottom: 1px solid var(--gray-3);
+  border-bottom: 1px solid var(--border);
 }
 .dodavatel-card .stock-row {
   border-bottom: none;
   cursor: pointer;
 }
 .dodavatel-card:hover .stock-row {
-  background: var(--gray-4);
+  background: var(--card);
 }
 .dodavatel-detail {
   padding: 6px 4px 20px 24px;
@@ -759,9 +770,9 @@ button {
   gap: 16px;
   align-items: center;
   padding: 12px 14px;
-  background: var(--gray-4);
+  background: var(--card);
   border-radius: 8px;
-  border-left: 3px solid var(--red);
+  border-left: 3px solid var(--accent);
 }
 @media (max-width: 700px) {
   .dodavatel-item {
@@ -772,7 +783,7 @@ button {
 .dodavatel-item-date {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--gray-2);
+  color: var(--muted);
 }
 .dodavatel-item-mid {
   min-width: 0;
@@ -780,12 +791,12 @@ button {
 .dodavatel-item-name {
   font-size: 14px;
   font-weight: 600;
-  color: var(--white);
+  color: var(--text);
 }
 .dodavatel-item-fase {
   font-family: var(--mono);
   font-size: 9px;
-  color: var(--gray-2);
+  color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-top: 3px;
@@ -805,25 +816,25 @@ button {
   margin-top: 8px;
   font-family: var(--mono);
   font-size: 13px;
-  color: var(--gray-2);
+  color: var(--muted);
 }
 .total-row b {
-  color: var(--white);
+  color: var(--text);
   font-size: 15px;
 }
 
 .note {
   margin-top: 40px;
   padding: 16px 20px;
-  border: 1px dashed var(--gray-3);
+  border: 1px dashed var(--border);
   border-radius: 8px;
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--gray-2);
+  color: var(--muted);
   line-height: 1.6;
 }
 .note b {
-  color: var(--white);
+  color: var(--text);
 }
 
 .hidden {
@@ -834,7 +845,7 @@ button {
 .invoice-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.75);
+  background: var(--overlay);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -843,8 +854,8 @@ button {
   overflow-y: auto;
 }
 .invoice-paper {
-  background: var(--white);
-  color: var(--black);
+  background: var(--paper);
+  color: var(--ink);
   width: 100%;
   max-width: 640px;
   border-radius: 10px;
@@ -859,8 +870,8 @@ button {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--gray-4);
-  color: var(--white);
+  background: var(--card);
+  color: var(--text);
   border: none;
   cursor: pointer;
   font-size: 16px;
@@ -873,7 +884,7 @@ button {
 .invoice-number {
   font-family: var(--mono);
   font-size: 12px;
-  color: #666;
+  color: var(--ink-muted);
   margin-top: 4px;
 }
 .invoice-grid {
@@ -892,7 +903,7 @@ button {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #999;
+  color: var(--ink-faint);
   margin-bottom: 8px;
 }
 .invoice-col-name {
@@ -902,7 +913,7 @@ button {
 }
 .invoice-col-line {
   font-size: 13px;
-  color: #444;
+  color: var(--ink-soft);
   line-height: 1.6;
 }
 .invoice-table {
@@ -916,13 +927,13 @@ button {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #999;
+  color: var(--ink-faint);
   padding: 8px 0;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--paper-line);
 }
 .invoice-table td {
   padding: 12px 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--paper-line-soft);
   font-size: 14px;
 }
 .invoice-table td.num {
@@ -938,7 +949,7 @@ button {
 }
 .invoice-total-row .label {
   font-size: 14px;
-  color: #444;
+  color: var(--ink-soft);
 }
 .invoice-total-row .value {
   font-size: 24px;
@@ -951,18 +962,18 @@ button {
   align-items: center;
   margin-top: 28px;
   padding-top: 24px;
-  border-top: 1px solid #ddd;
+  border-top: 1px solid var(--paper-line);
   flex-wrap: wrap;
 }
 .invoice-payment-details {
   flex: 1;
   min-width: 220px;
   font-size: 13px;
-  color: #444;
+  color: var(--ink-soft);
   line-height: 2;
 }
 .invoice-payment-details b {
-  color: #000;
+  color: var(--ink);
   font-family: var(--mono);
 }
 .invoice-qr-box {
@@ -971,7 +982,7 @@ button {
 .invoice-qr-box .qr-caption {
   font-family: var(--mono);
   font-size: 10px;
-  color: #999;
+  color: var(--ink-faint);
   margin-top: 6px;
 }
 .invoice-actions {
@@ -981,8 +992,8 @@ button {
   margin-top: 24px;
 }
 .invoice-btn-print {
-  background: var(--red);
-  color: var(--white);
+  background: var(--accent-dark);
+  color: var(--text);
   border: none;
   border-radius: 6px;
   padding: 10px 20px;
@@ -1016,27 +1027,27 @@ button {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: radial-gradient(ellipse at center, rgba(232, 48, 42, 0.08) 0%, transparent 70%);
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 70%);
 }
 .auth-card {
   width: 100%;
   max-width: 380px;
-  border: 1px solid var(--gray-3);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 32px 28px;
-  background: var(--gray-4);
+  background: var(--card);
 }
 .auth-error {
   margin-top: 14px;
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--red);
+  color: var(--loss);
 }
 .auth-note {
   margin-top: 14px;
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--green);
+  color: var(--profit);
 }
 .auth-forgot {
   display: block;
@@ -1045,13 +1056,13 @@ button {
   margin-top: 16px;
   background: none;
   border: none;
-  color: var(--gray-2);
+  color: var(--muted);
   font-size: 12px;
   cursor: pointer;
   text-decoration: underline;
 }
 .auth-forgot:hover {
-  color: var(--gray-1);
+  color: var(--text);
 }
 
 .loading-screen {
@@ -1059,9 +1070,42 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--gray-2);
+  color: var(--muted);
   font-family: var(--mono);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+}
+
+/* ---------------- Hover / čitelnost na akcentu ---------------- */
+.btn-add:hover:not(:disabled),
+.invoice-btn-print:hover {
+  background: var(--accent-dark);
+  color: var(--text);
+}
+.btn-transfer:hover {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.btn-invoice:hover {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+  color: var(--text);
+}
+.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.sub-pill:hover:not(.active) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.lens-option.active small {
+  color: var(--text);
+  opacity: 0.85;
+}
+.field input::placeholder,
+.plain-input::placeholder {
+  color: var(--muted);
+  opacity: 0.55;
 }
