@@ -9,15 +9,16 @@ import NakupSection from "@/components/NakupSection";
 import ProdejSection from "@/components/ProdejSection";
 import DoplnkySection from "@/components/DoplnkySection";
 import PrehledSection from "@/components/PrehledSection";
+import BilanceSection from "@/components/BilanceSection";
 
-type Mode = "nakup" | "prodej" | "doplnky" | "prehled";
+type Mode = "prehled" | "nakup" | "prodej" | "doplnky" | "bilance";
 
-const MODE_POS: Record<Mode, number> = { nakup: 0, prodej: 1, doplnky: 2, prehled: 3 };
+const MODE_POS: Record<Mode, number> = { prehled: 0, nakup: 1, prodej: 2, doplnky: 3, bilance: 4 };
 
 export default function AparatApp({ profile }: { profile: Profile }) {
   const router = useRouter();
   const supabase = createClient();
-  const [mode, setMode] = useState<Mode>("nakup");
+  const [mode, setMode] = useState<Mode>("prehled");
   const [preselectNakupId, setPreselectNakupId] = useState<number | null>(null);
   // Bumped whenever a mutation should force a cross-section refetch
   // (e.g. selling an item removes it from Nákup's dropdown).
@@ -53,6 +54,10 @@ export default function AparatApp({ profile }: { profile: Profile }) {
       <div className="lens-toggle-wrap">
         <div className="lens-toggle">
           <div className={`lens-slider pos-${MODE_POS[mode]}`}></div>
+          <div className={`lens-option ${mode === "prehled" ? "active" : ""}`} onClick={() => setMode("prehled")}>
+            Přehled
+            <small>co řešit teď</small>
+          </div>
           <div className={`lens-option ${mode === "nakup" ? "active" : ""}`} onClick={() => setMode("nakup")}>
             Nákup
             <small>co jsme koupili</small>
@@ -65,14 +70,15 @@ export default function AparatApp({ profile }: { profile: Profile }) {
             Doplňky
             <small>film, baterky, kabely...</small>
           </div>
-          <div className={`lens-option ${mode === "prehled" ? "active" : ""}`} onClick={() => setMode("prehled")}>
-            Přehled
+          <div className={`lens-option ${mode === "bilance" ? "active" : ""}`} onClick={() => setMode("bilance")}>
+            Bilance
             <small>zisky a ztráty</small>
           </div>
         </div>
       </div>
 
       <div className="wrap">
+        {mode === "prehled" && <PrehledSection refreshKey={refreshKey} onGo={setMode} />}
         {mode === "nakup" && (
           <NakupSection
             profile={profile}
@@ -94,7 +100,7 @@ export default function AparatApp({ profile }: { profile: Profile }) {
           />
         )}
         {mode === "doplnky" && <DoplnkySection profile={profile} refreshKey={refreshKey} onMutate={bump} />}
-        {mode === "prehled" && <PrehledSection refreshKey={refreshKey} />}
+        {mode === "bilance" && <BilanceSection refreshKey={refreshKey} />}
       </div>
     </>
   );

@@ -1,136 +1,217 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Nakup } from "@/lib/database.types";
-import { fetchAllNakup, fetchProdej, netForSale, type ProdejFull } from "@/lib/data";
+import type { Nakup, NakupFase, ProdejStav, DoplnkyNakup, DoplnkyProdej } from "@/lib/database.types";
+import {
+  fetchActiveNakup,
+  fetchProdej,
+  fetchDoplnkyNakup,
+  fetchDoplnkyProdej,
+  computeStock,
+  netForSale,
+  type ProdejFull,
+} from "@/lib/data";
 import { formatKc, formatDate } from "@/lib/format";
 
-function monthKey(dateStr: string): string {
-  return dateStr.slice(0, 7); // "YYYY-MM"
+export type OverviewTarget = "nakup" | "prodej" | "doplnky";
+
+const FAZE: { key: NakupFase; label: string }[] = [
+  { key: "nakoupeno", label: "Nakoupeno" },
+  { key: "servisovano", label: "Servisováno" },
+  { key: "pripraveno", label: "Připraveno k prodeji" },
+  { key: "nefunkcni", label: "Nefunkční" },
+];
+
+const STAVY: { key: ProdejStav; label: string }[] = [
+  { key: "pripraveno", label: "Připraveno" },
+  { key: "inzerovano", label: "Inzerováno" },
+  { key: "zamluveno", label: "Zamluveno" },
+  { key: "prodano", label: "Prodáno" },
+];
+
+const STALE_DAYS = 30;
+const LOW_STOCK = 2;
+
+function nakupDate(n: Nakup): Date {
+  return n.datum ? new Date(`${n.datum}T00:00:00`) : new Date(n.created_at);
 }
 
-function monthLabel(key: string): string {
-  const [y, m] = key.split("-").map(Number);
-  const d = new Date(y, m - 1, 1);
-  const label = d.toLocaleDateString("cs-CZ", { month: "long", year: "numeric" });
+function prodejMonthKey(r: ProdejFull): string {
+  return (r.datum || r.created_at).slice(0, 7);
+}
+
+function currentMonthKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthName(): string {
+  const label = new Date().toLocaleDateString("cs-CZ", { month: "long", year: "numeric" });
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-export default function PrehledSection({ refreshKey }: { refreshKey: number }) {
-  const [allNakup, setAllNakup] = useState<Nakup[]>([]);
-  const [prodejList, setProdejList] = useState<ProdejFull[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+function daysSince(d: Date): number {
+  return Math.floor((Date.now() - d.getTime()) / 86_400_000);
+}
 
-  async function load() {
-    setLoading(true);
-    const [nakup, prodej] = await Promise.all([fetchAllNakup(), fetchProdej()]);
-    setAllNakup(nakup);
-    setProdejList(prodej);
-    setLoading(false);
-  }
+export default function PrehledSection({
+  refreshKey,
+  onGo,
+}: {
+  refreshKey: number;
+  onGo: (target: OverviewTarget) => void;
+}) {
+  const [nakup, setNakup] = useState<Nakup[]>([]);
+  const [prodej, setProdej] = useState<ProdejFull[]>([]);
+  const [dn, setDn] = useState<DoplnkyNakup[]>([]);
+  const [dp, setDp] = useState<DoplnkyProdej[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const [n, p, a, b] = await Promise.all([fetchActiveNakup(), fetchProdej(), fetchDoplnkyNakup(), fetchDoplnkyProdej()]);
+      if (cancelled) return;
+      setNakup(n);
+      setProdej(p);
+      setDn(a);
+      setDp(b);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refreshKey]);
 
-  const losses = useMemo(
-    () =>
-      allNakup
-        .filter((n) => n.fase === "nefunkcni")
-        .map((n) => ({ month: monthKey(n.datum || n.created_at), nakup: n })),
-    [allNakup]
-  );
+  const stats = useMemo(() => {
+    const frozen = nakup.filter((n) => n.fase !== "nefunkcni");
+    const frozenTotal = frozen.reduce((s, n) => s + n.kolik_stalo, 0);
+    const brokenTotal = nakup.filter((n) => n.fase === "nefunkcni").reduce((s, n) => s + n.kolik_stalo, 0);
 
-  const gains = useMemo(
-    () =>
-      prodejList
-        .filter((r) => r.stav === "prodano")
-        .map((r) => ({ month: monthKey(r.datum || r.created_at), prodej: r, net: netForSale(r) })),
-    [prodejList]
-  );
+    const fazeCount = new Map<NakupFase, number>();
+    nakup.forEach((n) => fazeCount.set(n.fase, (fazeCount.get(n.fase) ?? 0) + 1));
+    const stavCount = new Map<ProdejStav, number>();
+    prodej.forEach((r) => stavCount.set(r.stav, (stavCount.get(r.stav) ?? 0) + 1));
 
-  const months = useMemo(() => {
-    const set = new Set<string>();
-    losses.forEach((l) => set.add(l.month));
-    gains.forEach((g) => set.add(g.month));
-    return [...set].sort((a, b) => b.localeCompare(a));
-  }, [losses, gains]);
+    const month = currentMonthKey();
+    const soldThisMonth = prodej.filter((r) => r.stav === "prodano" && prodejMonthKey(r) === month);
+    const marginThisMonth = soldThisMonth.reduce((s, r) => s + netForSale(r), 0);
 
-  const filteredLosses = selectedMonth === "all" ? losses : losses.filter((l) => l.month === selectedMonth);
-  const filteredGains = selectedMonth === "all" ? gains : gains.filter((g) => g.month === selectedMonth);
+    const reserved = prodej.filter((r) => r.stav === "zamluveno");
+    const lowStock = computeStock(dn, dp).filter((s) => s.remaining <= LOW_STOCK);
+    const stale = frozen
+      .map((n) => ({ n, days: daysSince(nakupDate(n)) }))
+      .filter((x) => x.days > STALE_DAYS)
+      .sort((a, b) => b.days - a.days);
 
-  const totalGain = filteredGains.reduce((s, g) => s + g.net, 0);
-  const totalLoss = filteredLosses.reduce((s, l) => s + l.nakup.kolik_stalo, 0);
-  const balance = totalGain - totalLoss;
+    return { frozenTotal, frozenCount: frozen.length, brokenTotal, fazeCount, stavCount, soldThisMonth, marginThisMonth, reserved, lowStock, stale };
+  }, [nakup, prodej, dn, dp]);
 
   return (
     <div>
       <div className="list-header">
-        <div className="list-title">Přehled zisků a ztrát</div>
-        <div className="list-sub">{loading ? "…" : `${months.length} MĚSÍCŮ`}</div>
+        <div className="list-title">Přehled</div>
+        <div className="list-sub">{loading ? "NAČÍTÁM…" : "AKTUÁLNÍ STAV"}</div>
       </div>
 
-      <div className="entry-form">
-        <div className="field">
-          <label>Měsíc</label>
-          <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
-            <option value="all">Celkem (vše)</option>
-            {months.map((m) => (
-              <option key={m} value={m}>
-                {monthLabel(m)}
-              </option>
-            ))}
-          </select>
+      <div className="stat-grid">
+        <div className="stat-card">
+          <div className="stat-label">Zamrzlé ve skladu</div>
+          <div className="stat-value">{formatKc(stats.frozenTotal)}</div>
+          <div className="stat-sub">
+            {stats.frozenCount} neprodaných položek
+            {stats.brokenTotal > 0 && <> · nefunkční mimo: {formatKc(stats.brokenTotal)}</>}
+          </div>
         </div>
-
-        <div className="prodej-row cols-3" style={{ marginTop: 18 }}>
-          <div className="fee-chip">
-            <span className="fee-label">Zisk z prodejů</span>
-            <span className={`fee-value ${totalGain >= 0 ? "profit-pos" : "profit-neg"}`}>{formatKc(totalGain)}</span>
-          </div>
-          <div className="fee-chip">
-            <span className="fee-label">Ztráta z nefunkčních</span>
-            <span className="fee-value profit-neg">−{formatKc(totalLoss)}</span>
-          </div>
-          <div className="fee-chip">
-            <span className="fee-label">Bilance</span>
-            <span className={`fee-value ${balance >= 0 ? "profit-pos" : "profit-neg"}`}>{formatKc(balance)}</span>
-          </div>
+        <div className="stat-card">
+          <div className="stat-label">Marže — {monthName()}</div>
+          <div className={`stat-value ${stats.marginThisMonth >= 0 ? "profit-pos" : "profit-neg"}`}>{formatKc(stats.marginThisMonth)}</div>
+          <div className="stat-sub">{stats.soldThisMonth.length} prodaných položek tento měsíc</div>
         </div>
       </div>
 
-      <div className="form-section-label">Prodáno se ziskem</div>
-      <div>
-        {filteredGains
-          .sort((a, b) => (b.prodej.datum || "").localeCompare(a.prodej.datum || ""))
-          .map((g) => (
-            <div className="simple-record" key={g.prodej.id} style={{ gridTemplateColumns: "0.8fr 1.3fr 1fr 0.8fr" }}>
-              <div className="qty">{formatDate(g.prodej.datum)}</div>
-              <div className="who">{g.prodej.polozka}</div>
-              <div style={{ color: "var(--muted)", fontSize: 13 }}>{g.prodej.klient_jmeno}</div>
-              <div className={`amount ${g.net >= 0 ? "profit-pos" : "profit-neg"}`}>{formatKc(g.net)}</div>
-            </div>
-          ))}
-        {!loading && filteredGains.length === 0 && <div className="stock-empty">Žádné prodeje v tomto období.</div>}
+      <div className="form-section-label" style={{ marginTop: 28 }}>
+        Nákup podle fáze
+      </div>
+      <div className="stat-grid compact">
+        {FAZE.map((f) => (
+          <div className="stat-card" key={f.key}>
+            <div className="stat-label">{f.label}</div>
+            <div className="stat-value">{stats.fazeCount.get(f.key) ?? 0}</div>
+          </div>
+        ))}
       </div>
 
-      <div className="form-section-label" style={{ marginTop: 32 }}>
-        Nefunkční (ztráta)
+      <div className="form-section-label" style={{ marginTop: 28 }}>
+        Prodej podle stavu
       </div>
-      <div>
-        {filteredLosses
-          .sort((a, b) => (b.nakup.datum || "").localeCompare(a.nakup.datum || ""))
-          .map((l) => (
-            <div className="simple-record" key={l.nakup.id} style={{ gridTemplateColumns: "0.8fr 1.3fr 1fr 0.8fr" }}>
-              <div className="qty">{formatDate(l.nakup.datum)}</div>
-              <div className="who">{l.nakup.co_koupili}</div>
-              <div style={{ color: "var(--muted)", fontSize: 13 }}>{l.nakup.dodavatel_jmeno}</div>
-              <div className="amount profit-neg">−{formatKc(l.nakup.kolik_stalo)}</div>
+      <div className="stat-grid compact">
+        {STAVY.map((s) => (
+          <div className="stat-card" key={s.key}>
+            <div className="stat-label">{s.label}</div>
+            <div className="stat-value">{stats.stavCount.get(s.key) ?? 0}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="list-header" style={{ marginTop: 36 }}>
+        <div className="list-title">Co řešit</div>
+      </div>
+
+      <div className="todo-group">
+        <div className="todo-head">
+          <span>Zamluvené, ještě neprodané</span>
+          <button className="btn-secondary" onClick={() => onGo("prodej")}>
+            → Prodej
+          </button>
+        </div>
+        {stats.reserved.map((r) => (
+          <div className="todo-item" key={r.id}>
+            <div className="who">{r.polozka}</div>
+            <div className="todo-meta">
+              {r.klient_jmeno} · {formatDate(r.datum)}
             </div>
-          ))}
-        {!loading && filteredLosses.length === 0 && <div className="stock-empty">Žádné nefunkční položky v tomto období.</div>}
+            <div className="amount">{formatKc(r.cena)}</div>
+          </div>
+        ))}
+        {!loading && stats.reserved.length === 0 && <div className="todo-empty">Nic k řešení.</div>}
+      </div>
+
+      <div className="todo-group">
+        <div className="todo-head">
+          <span>Docházející doplňky (skladem {LOW_STOCK} ks nebo méně)</span>
+          <button className="btn-secondary" onClick={() => onGo("doplnky")}>
+            → Doplňky
+          </button>
+        </div>
+        {stats.lowStock.map((s) => (
+          <div className="todo-item" key={s.name}>
+            <div className="who">{s.name}</div>
+            <div className="todo-meta">koupeno {s.bought} ks · prodáno {s.sold} ks</div>
+            <div className="amount profit-neg">{s.remaining} ks</div>
+          </div>
+        ))}
+        {!loading && stats.lowStock.length === 0 && <div className="todo-empty">Nic k řešení.</div>}
+      </div>
+
+      <div className="todo-group">
+        <div className="todo-head">
+          <span>Neprodané v Nákupu starší než {STALE_DAYS} dní</span>
+          <button className="btn-secondary" onClick={() => onGo("nakup")}>
+            → Nákup
+          </button>
+        </div>
+        {stats.stale.map(({ n, days }) => (
+          <div className="todo-item" key={n.id}>
+            <div className="who">{n.co_koupili}</div>
+            <div className="todo-meta">
+              {n.dodavatel_jmeno} · {formatDate(n.datum)} · {days} dní
+            </div>
+            <div className="amount">{formatKc(n.kolik_stalo)}</div>
+          </div>
+        ))}
+        {!loading && stats.stale.length === 0 && <div className="todo-empty">Nic k řešení.</div>}
       </div>
     </div>
   );
